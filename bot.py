@@ -48,7 +48,7 @@ def format_pdf(text):
     clean_text = re.sub('<[^<]+?>', '', text)
     clean_text = clean_text.encode('ascii', 'ignore').decode('ascii')
     pdf.multi_cell(0, 10, txt=clean_text)
-    return bytes(pdf.output(dest='S'))
+    return pdf.output()
     
 # --- 3. GESTIONE SESSIONE ---
 if "user_id" not in st.session_state: st.session_state.user_id = None
