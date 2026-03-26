@@ -26,8 +26,8 @@ def crea_sessione_stripe(id_prezzo):
             payment_method_types=['card'],
             line_items=[{'price': id_prezzo, 'quantity': 1}],
             mode='subscription',
-            success_url="http://localhost:8501/?success=true",
-            cancel_url="http://localhost:8501/",
+            success_url="https://svuotafrigo-app-4cvkjntg8gklzrkp5sjbuh.streamlit.app/",
+            cancel_url="https://svuotafrigo-app-4cvkjntg8gklzrkp5sjbuh.streamlit.app/",
         )
         return session.url
     except Exception as e:
