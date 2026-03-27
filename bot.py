@@ -33,7 +33,7 @@ if "user_id" not in st.session_state or st.session_state.user_id is None:
         <div class="login-hint">⬅️ Clicca qui per il Login!</div>
     """, unsafe_allow_html=True)
 
-# Database e API
+# Database e API (Le tue chiavi caricate correttamente)
 URL = "https://ixkrnsarskqgwwuudqms.supabase.co"
 KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4a3Juc2Fyc2txZ3d3dXVkcW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5Mjk5NDYsImV4cCI6MjA4OTUwNTk0Nn0.2_5BIu8g6bfjki91Uk_syMC7g8OTtQIb8yYnApEz3j8"
 GROQ_AD = "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"
@@ -42,7 +42,7 @@ stripe.api_key = "sk_test_51TD7vwBBE2wDwi0CS5b18fA0sd6CqNclpupLdSZHVB9INo23zKGRE
 supabase = create_client(URL, KEY)
 client = Groq(api_key=GROQ_AD)
 
-# --- 2. FUNZIONI ---
+# --- 2. FUNZIONI DI SUPPORTO ---
 def format_pdf(text):
     pdf = FPDF()
     pdf.add_page()
@@ -61,7 +61,7 @@ def get_emoji(n):
 def mostra_tasto_login(sezione):
     st.error(f"🔒 La sezione **{sezione}** è riservata agli utenti registrati.")
     if st.button(f"👤 ACCEDI ORA", key=f"btn_login_{sezione}"):
-        st.info("Apri il menù laterale a sinistra (clicca sulle freccette '>>') per accedere!")
+        st.info("Apri il menù laterale a sinistra (clicca sulle freccette '>>' in alto a sinistra) per accedere!")
 
 # --- 3. SESSION STATE ---
 if "user_id" not in st.session_state: st.session_state.user_id = None
@@ -71,7 +71,7 @@ if "ultima_ricetta" not in st.session_state: st.session_state.ultima_ricetta = "
 if "ing_input" not in st.session_state: st.session_state.ing_input = ""
 if "count_ospite" not in st.session_state: st.session_state.count_ospite = 0
 
-# --- 4. SIDEBAR ---
+# --- 4. SIDEBAR (GESTIONE LOGIN) ---
 st.sidebar.title("👤 My Account")
 if st.session_state.user_id is None:
     scelta = st.sidebar.selectbox("Opzioni", ["Login", "Crea Account"])
@@ -101,7 +101,7 @@ else:
         st.session_state.clear()
         st.rerun()
 
-# --- 5. TABS ---
+# --- 5. TABS PRINCIPALI ---
 t1, t2, t3, t4, t5 = st.tabs(["🔥 Cucina AI", "📦 Dispensa", "🛒 Spesa", "📖 Archivio", "💬 Feedback"])
 
 with t1:
@@ -113,13 +113,13 @@ with t1:
                 st.session_state.ing_input = ", ".join([i['ingrediente'] for i in items.data])
                 st.rerun()
 
-    ing = st.text_area("Cosa hai in frigo?", value=st.session_state.ing_input)
+    ing = st.text_area("Cosa hai in frigo?", value=st.session_state.ing_input, placeholder="Es: uova, farina, pomodoro...")
     if st.button("Genera Ricetta ✨", use_container_width=True):
         if not st.session_state.user_id and st.session_state.count_ospite >= 2:
             st.error("Limite raggiunto! Accedi per continuare.")
         else:
             with st.spinner("Chef al lavoro..."):
-                res = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": f"Ricetta HTML per: {ing}"}])
+                res = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": f"Crea una ricetta gustosa in formato HTML con questi ingredienti: {ing}"}])
                 st.session_state.ultima_ricetta = res.choices[0].message.content
                 if not st.session_state.user_id: st.session_state.count_ospite += 1
             st.rerun()
@@ -131,7 +131,7 @@ with t1:
         if st.session_state.user_id:
             if col_save.button("⭐ Salva in Archivio"):
                 supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
-                st.toast("Ricetta salvata!")
+                st.success("Ricetta salvata nell'Archivio!")
 
 with t2:
     st.header("📦 La tua Dispensa")
@@ -142,7 +142,7 @@ with t2:
                 supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": n_i}).execute()
                 st.rerun()
         
-        st.subheader("I tuoi ingredienti:")
+        st.write("---")
         res_disp = supabase.table("dispensa").select("*").eq("user_id", st.session_state.user_id).execute()
         for i in res_disp.data:
             c1, c2 = st.columns([4,1])
@@ -162,7 +162,7 @@ with t3:
                 supabase.table("lista_spesa").insert({"user_id": st.session_state.user_id, "item": m}).execute()
                 st.rerun()
         
-        st.subheader("Cose da prendere:")
+        st.write("---")
         res_spesa = supabase.table("lista_spesa").select("*").eq("user_id", st.session_state.user_id).execute()
         for s in res_spesa.data:
             c1, c2 = st.columns([4,1])
@@ -191,11 +191,11 @@ with t4:
 with t5:
     st.header("Feedback 📣")
     if st.session_state.user_id:
-        f_msg = st.text_area("Cosa ne pensi dell'app?")
-        voto = st.slider("Voto", 1, 5, 5)
+        f_msg = st.text_area("Cosa ne pensi dell'app? Scrivici qui!")
+        voto = st.slider("Valutazione", 1, 5, 5)
         if st.button("Invia Feedback 🚀"):
             if f_msg:
                 supabase.table("feedback").insert({"user_id": st.session_state.user_id, "messaggio": f_msg, "voto": voto}).execute()
-                st.success("Grazie mille!")
+                st.success("Grazie mille per il tuo feedback!")
     else:
         mostra_tasto_login("Feedback")
