@@ -1,4 +1,5 @@
 import streamlit as st
+st.markdown('<link rel="manifest" href="./manifest.json">', unsafe_allow_html=True)
 import stripe
 from groq import Groq
 from supabase import create_client
