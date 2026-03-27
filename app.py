@@ -5,30 +5,29 @@ from supabase import create_client
 from fpdf import FPDF
 import re
 import io
-import webbrowser
 
 # --- 1. CONFIGURAZIONI ---
 st.set_page_config(page_title="Svuotafrigo App", layout="wide")
 
-# Credenziali (Usa st.secrets per sicurezza in produzione!)
-URL = "https://ixkrnsarskqgwwuudqms.supabase.co"
-KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4a3Juc2Fyc2txZ3d3dXVkcW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5Mjk5NDYsImV4cCI6MjA4OTUwNTk0Nn0.2_5BIu8g6bfjki91Uk_syMC7g8OTtQIb8yYnApEz3j8"
-GROQ_AD = "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"
-stripe.api_key = "sk_test_51TD7vwBBE2wDwi0CS5b18fA0sd6CqNclpupLdSZHVB9INo23zKGRErg3gtQL1ObzfztxfjCZY14wPUVQDBh98XeB00IeP2wsSK".strip()
+# Credenziali dai Secrets di Streamlit
+URL = st.secrets["SUPABASE_URL"]
+KEY = st.secrets["SUPABASE_KEY"]
+GROQ_AD = st.secrets["GROQ_API_KEY"]
+stripe.api_key = st.secrets["STRIPE_API_KEY"]
 
-# ID Prodotti Stripe (Assicurati che questi ID siano corretti nella tua dashboard Stripe)
+# ID Prodotti Stripe
 ID_GOLD = "price_1TD86OBBE2wDwi0CI4KlvKFJ"
 ID_DIAMOND = "price_1TD88HBBE2wDwi0CV9d2heo2"
 
 supabase = create_client(URL, KEY)
 client = Groq(api_key=GROQ_AD)
 
-# --- 2. FUNZIONI ---
+# --- 2. FUNZIONI UTILI ---
 def format_pdf(text):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    # Pulizia tag HTML per il PDF
+    # Pulizia tag HTML per evitare errori nel PDF
     clean = re.sub('<[^<]+?>', '', text).encode('latin-1', 'ignore').decode('latin-1')
     pdf.multi_cell(0, 10, txt=clean)
     return pdf.output(dest='S').encode('latin-1')
@@ -48,14 +47,15 @@ def create_checkout_session(price_id, user_email):
         st.error(f"Errore Stripe: {e}")
         return None
 
-# --- 3. SESSION STATE ---
+# --- 3. SESSION STATE (Inizializzazione per evitare AttributeError) ---
 if "user_id" not in st.session_state: st.session_state.user_id = None
+if "nickname" not in st.session_state: st.session_state.nickname = "Chef"
 if "is_premium" not in st.session_state: st.session_state.is_premium = "Free"
 if "user_email" not in st.session_state: st.session_state.user_email = ""
 if "ultima_ricetta" not in st.session_state: st.session_state.ultima_ricetta = None
 if "count_ospite" not in st.session_state: st.session_state.count_ospite = 0
 
-# --- 4. SIDEBAR (Login & Abbonamento) ---
+# --- 4. SIDEBAR (Login & Abbonamenti) ---
 st.sidebar.title("👤 My Kitchen")
 
 if st.session_state.user_id is None:
@@ -63,62 +63,66 @@ if st.session_state.user_id is None:
     with st.sidebar.form("auth"):
         e = st.text_input("Email")
         p = st.text_input("Password", type="password")
-        nick = st.text_input("Nickname") if scelta == "Crea Account" else ""
+        nick_new = st.text_input("Nickname") if scelta == "Crea Account" else ""
         if st.form_submit_button("Entra"):
             try:
                 if scelta == "Login":
                     res = supabase.auth.sign_in_with_password({"email": e, "password": p})
                     st.session_state.user_id = res.user.id
                     st.session_state.user_email = e
-                    # Recupera profilo
+                    # Recupero dati profilo
                     prof = supabase.table("profili").select("*").eq("id", res.user.id).execute()
                     if prof.data:
-                        st.session_state.nickname = prof.data[0]["nickname"]
+                        st.session_state.nickname = prof.data[0].get("nickname", "Chef")
                         st.session_state.is_premium = prof.data[0].get("subscription_plan", "Free")
                 else:
                     res = supabase.auth.sign_up({"email": e, "password": p})
                     if res.user:
-                        supabase.table("profili").insert({"id": res.user.id, "nickname": nick, "subscription_plan": "Free"}).execute()
+                        supabase.table("profili").insert({
+                            "id": res.user.id, 
+                            "nickname": nick_new, 
+                            "subscription_plan": "Free"
+                        }).execute()
                     st.success("Account creato! Fai il login.")
                 st.rerun()
             except Exception as ex: st.error(f"Errore: {ex}")
 else:
     st.sidebar.success(f"Ciao {st.session_state.nickname}!")
-    st.sidebar.write(f"Piano attuale: **{st.session_state.is_premium}**")
+    st.sidebar.write(f"Piano: **{st.session_state.is_premium}**")
     
-    # Sezione Abbonamenti nella Sidebar
+    # Sezione Stripe
     if st.session_state.is_premium == "Free":
         st.sidebar.markdown("---")
-        st.sidebar.subheader("Diventa Pro 🚀")
-        if st.sidebar.button("Abbonati a GOLD (5€/mese)"):
+        st.sidebar.subheader("🚀 Passa a Pro")
+        if st.sidebar.button("Abbonati a GOLD (5€)"):
             url = create_checkout_session(ID_GOLD, st.session_state.user_email)
-            if url: st.sidebar.link_button("Paga ora", url)
+            if url: st.sidebar.link_button("Vai al pagamento", url)
             
-        if st.sidebar.button("Abbonati a DIAMOND (10€/mese)"):
+        if st.sidebar.button("Abbonati a DIAMOND (10€)"):
             url = create_checkout_session(ID_DIAMOND, st.session_state.user_email)
-            if url: st.sidebar.link_button("Paga ora", url)
+            if url: st.sidebar.link_button("Vai al pagamento", url)
     
     if st.sidebar.button("Logout 🚪"): 
         st.session_state.clear()
         st.rerun()
 
-# --- 5. TABS ---
+# --- 5. INTERFACCIA PRINCIPALE (TABS) ---
 t1, t2, t3, t4 = st.tabs(["🔥 Cucina", "📦 Dispensa", "🛒 Spesa", "📖 Archivio"])
 
 with t1:
     st.header("Generatore Ricette AI")
     
-    # Controllo limiti per ospiti e utenti free
-    limite_raggiunto = False
+    # Limite Ospite
+    blobloccato = False
     if not st.session_state.user_id and st.session_state.count_ospite >= 2:
-        limite_raggiunto = True
-        st.warning("⚠️ Hai raggiunto il limite di 2 ricette come ospite. Accedi per continuare!")
+        blobloccato = True
+        st.warning("⚠️ Limite raggiunto! Accedi per generare altre ricette.")
     
-    ing = st.text_area("Cosa hai in frigo?", placeholder="Esempio: uova, farina, latte...")
+    ing = st.text_area("Cosa c'è in frigo?", placeholder="Es: pasta, tonno, capperi...")
     
-    if st.button("Genera Ricetta ✨", use_container_width=True, disabled=limite_raggiunto):
-        with st.spinner("Lo Chef sta scrivendo..."):
-            prompt = f"Crea una ricetta con {ing}. Usa tag HTML (h1, h2, p, ul, li). Sii creativo!"
+    if st.button("Genera ✨", use_container_width=True, disabled=blobloccato):
+        with st.spinner("Lo Chef sta creando..."):
+            prompt = f"Crea una ricetta con: {ing}. Usa tag HTML (h1, h2, p, ul, li). Non scrivere chiacchiere."
             res = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content":prompt}])
             st.session_state.ultima_ricetta = res.choices[0].message.content
             if not st.session_state.user_id:
@@ -126,31 +130,35 @@ with t1:
             st.rerun()
 
     if st.session_state.ultima_ricetta:
-        st.markdown('<div style="background-color: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #00ffaa;">', unsafe_allow_html=True)
-        st.markdown(st.session_state.ultima_ricetta, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Box grafico per la ricetta
+        st.markdown(f'<div style="background-color: #1e1e1e; padding: 25px; border-radius: 15px; border: 1px solid #00ffaa;">{st.session_state.ultima_ricetta}</div>', unsafe_allow_html=True)
         
-        # Funzioni Extra (PDF e Salva)
-        col1, col2 = st.columns(2)
-        with col1:
+        c1, c2 = st.columns(2)
+        with c1:
             st.download_button("📄 Scarica PDF", data=format_pdf(st.session_state.ultima_ricetta), file_name="ricetta.pdf")
-        with col2:
+        with c2:
             if st.session_state.user_id:
                 if st.button("💾 Salva in Archivio"):
-                    supabase.table("ricette").insert({"user_id": st.session_state.user_id, "content": st.session_state.ultima_ricetta}).execute()
-                    st.success("Salvata!")
+                    try:
+                        supabase.table("ricette").insert({"user_id": st.session_state.user_id, "content": st.session_state.ultima_ricetta}).execute()
+                        st.success("Salvata nell'archivio!")
+                    except Exception as e:
+                        st.error(f"Errore: {e}")
             else:
-                st.info("Loggati per salvare le ricette!")
+                st.info("Loggati per salvare!")
 
 with t4:
     if st.session_state.user_id:
         st.header("📖 Il tuo Archivio")
-        res = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute()
-        if res.data:
-            for r in res.data:
-                with st.expander(f"Ricetta del {r['created_at'][:10]}"):
-                    st.markdown(r['content'], unsafe_allow_html=True)
-        else:
-            st.write("Non hai ancora salvato ricette.")
+        try:
+            res = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute()
+            if res.data:
+                for r in res.data:
+                    with st.expander(f"Ricetta del {r['created_at'][:10]}"):
+                        st.markdown(r['content'], unsafe_allow_html=True)
+            else:
+                st.write("Archivio vuoto.")
+        except:
+            st.write("Nessuna ricetta trovata.")
     else:
-        st.error("🔒 Accedi per vedere il tuo archivio.")
+        st.error("🔒 Accedi per vedere l'archivio.")
