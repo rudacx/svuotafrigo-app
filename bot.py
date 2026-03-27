@@ -6,6 +6,7 @@ from supabase import create_client
 from fpdf import FPDF
 import re
 import time
+import io
 
 # --- 1. CONFIGURAZIONI ---
 URL = "https://ixkrnsarskqgwwuudqms.supabase.co"
@@ -46,11 +47,13 @@ def format_pdf(text):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
+    # Rimuoviamo tag HTML e caratteri speciali per il PDF
     clean_text = re.sub('<[^<]+?>', '', text)
-    clean_text = clean_text.encode('ascii', 'ignore').decode('ascii')
+    clean_text = clean_text.encode('latin-1', 'ignore').decode('latin-1')
     pdf.multi_cell(0, 10, txt=clean_text)
-    return pdf.output()
-    
+    # Restituiamo i bytes pronti per il download
+    return pdf.output(dest='S').encode('latin-1')
+
 # --- 3. GESTIONE SESSIONE ---
 if "user_id" not in st.session_state: st.session_state.user_id = None
 if "is_premium" not in st.session_state: st.session_state.is_premium = False
@@ -68,17 +71,9 @@ if query_params.get("success") == "true":
         st.balloons()
     st.query_params.clear()
 
-if query_params.get("type") == "recovery":
-    st.warning("⚠️ Modalità Reset Password")
-    nuova_pwd = st.text_input("Inserisci la nuova Password", type="password")
-    if st.button("Aggiorna Password 🔐"):
-        supabase.auth.update_user({"password": nuova_pwd})
-        st.success("Password aggiornata! Ora puoi accedere.")
-        st.query_params.clear()
-
 # --- 4. SIDEBAR ---
-st.sidebar.title("👤 My Kitchen Account")
 if st.session_state.user_id is None:
+    st.sidebar.title("👉 Accedi Qui! 👈")
     scelta = st.sidebar.selectbox("Cosa vuoi fare?", ["Login", "Crea Account", "Recupero Password"])
     with st.sidebar.form("auth_form"):
         email = st.text_input("Email")
@@ -104,24 +99,13 @@ if st.session_state.user_id is None:
                     st.info("Email di reset inviata!")
             except Exception as e: st.error(f"Errore: {e}")
 else:
+    st.sidebar.title("👤 Account")
     st.sidebar.success(f"Bentornato, {st.session_state.nickname}!")
     st.sidebar.write(f"Piano: {'💎 DIAMOND' if st.session_state.is_premium else '👨‍🍳 STANDARD'}")
     
     if not st.session_state.is_premium:
         st.sidebar.markdown("---")
         opzione = st.sidebar.radio("Scegli upgrade:", ["Gold (6 mesi) €9,99", "Diamond (1 anno) €19,99"])
-        
-        # --- LINK VANTAGGI PREMIUM ---
-        with st.sidebar.expander("✨ Cosa include il Premium?"):
-            st.markdown("""
-            Passando a un piano superiore sbloccherai:
-            - **Archivio illimitato**: Salva quante ricette vuoi.
-            - **Dispensa infinita**: Aggiungi tutti i tuoi ingredienti.
-            - **Lettura Vocale**: Lo Chef ti guida a voce mentre cucini.
-            - **Tabella Macro & Kcal**: Calcoli nutrizionali per ogni ricetta (Solo Diamond).
-            - **Supporto Prioritario**: Risolviamo i tuoi problemi subito.
-            """)
-        
         if st.sidebar.button("Attiva Premium 💳", use_container_width=True):
             id_scelto = ID_DIAMOND if "Diamond" in opzione else ID_GOLD
             url = crea_sessione_stripe(id_scelto)
@@ -135,7 +119,7 @@ else:
 t1, t2, t3, t4, t5 = st.tabs(["🔥 Cucina AI", "📦 Dispensa", "🛒 Spesa", "📖 Archivio", "💬 Feedback"])
 
 with t1:
-    st.header("Generatore di Ricette Intelligente")
+    st.header("Generatore di Ricette")
     if st.session_state.user_id:
         if st.button("Carica dalla Dispensa 📦"):
             items = supabase.table("dispensa").select("ingrediente").eq("user_id", st.session_state.user_id).execute()
@@ -143,79 +127,77 @@ with t1:
                 st.session_state.ing_input = ", ".join([i['ingrediente'] for i in items.data])
                 st.rerun()
             else: st.warning("La tua dispensa è vuota!")
+    
+    # Alert Premium per la cucina
+    if st.session_state.user_id and not st.session_state.is_premium:
+        st.info("💡 **Consiglio:** Passa a Diamond per avere anche i calcoli nutrizionali!")
 
-    ing = st.text_area("Quali ingredienti hai?", value=st.session_state.ing_input, placeholder="Es: uova, farina, pomodoro...")
+    ing = st.text_area("Quali ingredienti hai?", value=st.session_state.ing_input, placeholder="Es: uova, farina...")
     c1, c2 = st.columns(2)
     tmp = c1.selectbox("Tempo massimo", ["15 min", "30 min", "60 min"])
-    mod = c2.selectbox("Personalità dello Chef", ["Simpatico", "Professionale", "Cattivissimo"])
+    mod = c2.selectbox("Chef", ["Simpatico", "Professionale", "Cattivissimo"])
 
     if st.button("Genera Ricetta ✨", use_container_width=True):
         if not st.session_state.user_id and st.session_state.count_ospite >= 2:
-            st.error("Accedi per generare altre ricette!")
+            st.error("Accedi per generare altre ricette! (Max 2 per ospiti)")
         else:
-            with st.spinner("Lo Chef sta scrivendo per te..."):
-                macros = ""
-                if st.session_state.is_premium:
-                    macros = " Inoltre, genera una tabella HTML con i Macro (Proteine, Carboidrati, Grassi) e le calorie totali."
-                prompt = f"Sei uno chef {mod}. Crea una ricetta in HTML elegante (usa <h4> per i titoli e <b> per i passaggi) usando: {ing}. Tempo: {tmp}.{macros} Alla fine aggiungi il costo stimato."
+            with st.spinner("Lo Chef sta scrivendo..."):
+                macros = " Inoltre, genera una tabella HTML con i Macro e calorie." if st.session_state.is_premium else ""
+                prompt = f"Sei uno chef {mod}. Crea una ricetta in HTML elegante usando: {ing}. Tempo: {tmp}.{macros}"
                 res = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
                 st.session_state.ultima_ricetta = res.choices[0].message.content
                 if not st.session_state.user_id: st.session_state.count_ospite += 1
             st.rerun()
 
     if st.session_state.ultima_ricetta:
-        st.markdown("""<style>.recipe-card { background-color: #1E1E1E; padding: 25px; border-radius: 15px; border-left: 6px solid #ff4b4b; color: #f0f0f0; line-height: 1.6; } .recipe-card h4 { color: #ff4b4b !important; font-family: 'serif'; } table { width: 100%; border: 1px solid #444; border-collapse: collapse; margin: 10px 0; } th, td { border: 1px solid #444; padding: 10px; text-align: left; }</style>""", unsafe_allow_html=True)
-        st.markdown(f'<div class="recipe-card"><h4>👨‍🍳 La tua Ricetta</h4>{st.session_state.ultima_ricetta}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="background-color:#1E1E1E; padding:20px; border-radius:10px; border-left:5px solid #ff4b4b;">{st.session_state.ultima_ricetta}</div>', unsafe_allow_html=True)
         
-        st.markdown("---")
-        st.subheader("🎤 Assistente in Cucina")
         col_v, col_t = st.columns(2)
         with col_v:
             if st.session_state.is_premium:
-                clean_speech = re.sub('<[^<]+?>', '', st.session_state.ultima_ricetta).replace("'", "\\'").replace("\n", " ")
-                st.components.v1.html(f"<button id='p' style='width:100%; padding:12px; background:#ff4b4b; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;'>🔊 Leggi Ricetta</button><script>const s = new SpeechSynthesisUtterance('{clean_speech}'); s.lang = 'it-IT'; document.getElementById('p').onclick = () => {{ window.speechSynthesis.cancel(); window.speechSynthesis.speak(s); }};</script>", height=70)
-            else: st.info("🎤 Lettura Vocale disponibile solo per utenti Premium 💎")
-        
-        with col_t:
-            timer_m = st.number_input("Timer (minuti):", 1, 60, 10)
-            if st.button("Avvia Timer ⏱️"): st.toast(f"Timer da {timer_m} min avviato!")
+                clean_speech = re.sub('<[^<]+?>', '', st.session_state.ultima_ricetta).replace("'", " ").replace("\n", " ")
+                st.components.v1.html(f"<button id='p' style='width:100%; padding:10px; background:#ff4b4b; color:white; border:none; border-radius:5px; cursor:pointer;'>🔊 Leggi</button><script>const s = new SpeechSynthesisUtterance('{clean_speech}'); s.lang = 'it-IT'; document.getElementById('p').onclick = () => {{ window.speechSynthesis.speak(s); }};</script>", height=60)
+            else:
+                if st.button("🔊 Leggi (Premium)", use_container_width=True): st.warning("Sblocca il piano Diamond per la lettura vocale!")
 
         c_a, c_b = st.columns(2)
         if st.session_state.user_id:
-            if c_a.button("💾 Salva in Archivio", use_container_width=True):
+            if c_a.button("💾 Salva", use_container_width=True):
                 count_res = supabase.table("ricette").select("id", count="exact").eq("user_id", st.session_state.user_id).execute()
                 if not st.session_state.is_premium and (count_res.count or 0) >= 5:
-                    st.error("Hai raggiunto il limite di 5 ricette. Passa a Premium! 💎")
+                    st.error("Limite 5 ricette raggiunto! Diventa Premium 💎")
                 else:
                     supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
-                    st.success("Ricetta salvata!")
+                    st.success("Salvata!")
         
-        pdf_bytes = format_pdf(st.session_state.ultima_ricetta)
-        c_b.download_button("📄 Scarica PDF", data=pdf_bytes, file_name="ricetta.pdf", use_container_width=True)
+        pdf_data = format_pdf(st.session_state.ultima_ricetta)
+        c_b.download_button("📄 PDF", data=pdf_data, file_name="ricetta.pdf", mime="application/pdf", use_container_width=True)
 
 with t2:
     st.header("📦 Dispensa")
     if st.session_state.user_id:
         disp_count = supabase.table("dispensa").select("id", count="exact").eq("user_id", st.session_state.user_id).execute()
-        n_ing = st.text_input("Aggiungi ingrediente:")
+        n_ing = st.text_input("Nuovo ingrediente:")
         if st.button("Aggiungi ➕"):
             if not st.session_state.is_premium and (disp_count.count or 0) >= 10:
-                st.error("Dispensa piena (max 10). Upgrade a Diamond per spazio infinito! 💎")
+                st.error("Limite 10 ingredienti. Passa a Diamond! 💎")
             else:
                 supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": n_ing}).execute()
                 st.rerun()
         for i in supabase.table("dispensa").select("*").eq("user_id", st.session_state.user_id).execute().data:
-            col1, col2 = st.columns([4,1])
-            col1.write(f"{get_emoji(i['ingrediente'])} {i['ingrediente']}")
-            if col2.button("🗑️", key=f"d_{i['id']}"):
+            c1, c2 = st.columns([4,1])
+            c1.write(f"{get_emoji(i['ingrediente'])} {i['ingrediente']}")
+            if c2.button("🗑️", key=f"d_{i['id']}"):
                 supabase.table("dispensa").delete().eq("id", i['id']).execute()
                 st.rerun()
+    else:
+        st.warning("⚠️ Loggati per usare la Dispensa e caricare gli ingredienti automaticamente!")
 
 with t3:
-    st.header("🛒 Lista della Spesa")
+    st.header("🛒 Lista Spesa")
     if st.session_state.user_id:
-        manca = st.text_input("Cosa ti serve?")
-        if st.button("Aggiungi alla lista 🛒"):
+        manca = st.text_input("Cosa manca?")
+        if st.button("Aggiungi 🛒"):
             supabase.table("lista_spesa").insert({"user_id": st.session_state.user_id, "item": manca}).execute()
             st.rerun()
         for s in supabase.table("lista_spesa").select("*").eq("user_id", st.session_state.user_id).execute().data:
@@ -224,53 +206,29 @@ with t3:
             if c2.button("✔️", key=f"s_{s['id']}"):
                 supabase.table("lista_spesa").delete().eq("id", s['id']).execute()
                 st.rerun()
+    else:
+        st.warning("⚠️ Loggati per salvare la tua lista della spesa!")
 
 with t4:
-    st.header("📖 Il tuo Archivio")
+    st.header("📖 Archivio")
     if st.session_state.user_id:
-        mie_ricette = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute()
-        st.info(f"Ricette salvate: {len(mie_ricette.data)} / {'∞' if st.session_state.is_premium else '5'}")
-        for r in mie_ricette.data:
-            with st.expander(f"Ricetta del {r['created_at'][:10]} 🍴"):
+        mie = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute()
+        st.info(f"Salvate: {len(mie.data)} / {'∞' if st.session_state.is_premium else '5'}")
+        for r in mie.data:
+            with st.expander(f"Ricetta {r['created_at'][:10]}"):
                 st.markdown(r['contenuto'], unsafe_allow_html=True)
-                if st.button("Elimina Ricetta 🗑️", key=f"del_rec_{r['id']}"):
+                if st.button("Elimina", key=f"del_{r['id']}"):
                     supabase.table("ricette").delete().eq("id", r['id']).execute()
                     st.rerun()
-
-# ... (tutto il resto del tuo codice rimane identico) ...
+    else:
+        st.warning("⚠️ Loggati per archiviare le tue ricette preferite!")
 
 with t5:
     st.header("Feedback 📣")
     if st.session_state.user_id:
-        voto = st.slider("Voto app", 1, 5, 5)
         msg = st.text_area("Suggerimenti?")
-        
         if st.button("Invia 🚀"):
-            if msg:
-                try:
-                    # Usiamo un dizionario base per evitare errori di colonne mancanti nel DB
-                    dati_feedback = {
-                        "user_id": st.session_state.user_id, 
-                        "messaggio": msg, 
-                        "voto": voto
-                    }
-                    
-                    # Se il nickname esiste nella sessione, proviamo a inserirlo
-                    if st.session_state.nickname:
-                        dati_feedback["nickname"] = st.session_state.nickname
-                    
-                    supabase.table("feedback").insert(dati_feedback).execute()
-                    st.success("Grazie per il tuo feedback!")
-                except Exception as e:
-                    # Se fallisce per colpa del nickname, riprova senza
-                    try:
-                        supabase.table("feedback").insert({
-                            "user_id": st.session_state.user_id, 
-                            "messaggio": msg, 
-                            "voto": voto
-                        }).execute()
-                        st.success("Inviato con successo!")
-                    except:
-                        st.error(f"Errore nell'invio: {e}")
-            else:
-                st.warning("Scrivi un messaggio prima di inviare.")
+            supabase.table("feedback").insert({"user_id": st.session_state.user_id, "messaggio": msg}).execute()
+            st.success("Grazie!")
+    else:
+        st.warning("⚠️ Accedi per inviarci un feedback.")
