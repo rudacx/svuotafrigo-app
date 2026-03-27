@@ -1,101 +1,130 @@
 import streamlit as st
 from groq import Groq
 from supabase import create_client
+from fpdf import FPDF
 import re
 
-# 1. CONFIGURAZIONE PAGINA E STILE (INTER FONT + DARK MODE)
-st.set_page_config(page_title="SvuotaFrigo AI", layout="centered")
+# --- 1. CONFIGURAZIONE E STILE (FONT INTER) ---
+st.set_page_config(page_title="Svuotafrigo AI", layout="wide")
 
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-    .stApp { background-color: #0E1117; color: #FFFFFF; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
+    
     .recipe-card {
-        background-color: #1E232D;
-        padding: 25px;
+        background: #1E1E1E; 
+        padding: 30px; 
         border-radius: 15px;
-        border: 1px solid #30363D;
-        margin-top: 20px;
-        line-height: 1.6;
+        border-left: 6px solid #ff4b4b; 
+        color: #F0F0F0; 
+        line-height: 1.7;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+        margin-bottom: 25px;
     }
-    h1, h2, h3 { color: #00FFAA !important; margin-bottom: 15px; }
-    .stButton>button {
-        background-color: #00FFAA !important;
-        color: #000000 !important;
-        font-weight: bold;
-        border-radius: 8px;
-        width: 100%;
-        border: none;
-    }
+    .recipe-card h1, .recipe-card h2 { color: #ff4b4b !important; font-weight: 700; margin-top: 10px; }
+    .stButton>button { border-radius: 8px; font-weight: 600; }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. INIZIALIZZAZIONE CLIENTI (Prende i dati dai Secrets che hai salvato)
-try:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-except Exception as e:
-    st.error("Errore di configurazione: controlla i Secrets su Streamlit Cloud.")
+# --- 2. CONNESSIONI API ---
+URL = "https://ixkrnsarskqgwwuudqms.supabase.co"
+KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4a3Juc2Fyc2txZ3d3dXVkcW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5Mjk5NDYsImV4cCI6MjA4OTUwNTk0Nn0.2_5BIu8g6bfjki91Uk_syMC7g8OTtQIb8yYnApEz3j8"
+GROQ_KEY = "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"
 
-# 3. FUNZIONE DI PULIZIA (Rimuove scarti dell'AI e tag orfani)
+supabase = create_client(URL, KEY)
+client = Groq(api_key=GROQ_KEY)
+
+# --- 3. FUNZIONI DI SUPPORTO ---
 def super_clean(text):
-    # Rimuove blocchi di codice tipo ```html
+    """Pulisce la risposta dell'AI dai tag visualizzati e dalle chiacchiere"""
     text = re.sub(r"```html|```", "", text)
-    # Cerca il primo titolo h1 o h2 e scarta tutto quello che c'è prima (saluti, intro)
-    match = re.search(r"<(h1|h2).*", text, re.DOTALL | re.IGNORECASE)
-    return match.group(0).strip() if match else text.strip()
+    # Cerca l'inizio del primo tag h1 o h2 e taglia tutto quello che c'è prima
+    match = re.search(r"<h[1-2].*", text, re.DOTALL | re.IGNORECASE)
+    if match:
+        text = match.group(0)
+    # Rimuove i saluti finali dell'AI
+    text = re.sub(r"(Spero che|Buon appetito|Se hai altre|Spero di esserti).*", "", text, flags=re.DOTALL | re.IGNORECASE)
+    return text.strip()
 
-# 4. INTERFACCIA A TAB
-tab1, tab2 = st.tabs(["🔍 Generatore", "📚 Archivio"])
+def format_pdf(text):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    clean_text = re.sub('<[^<]+?>', '', text).encode('latin-1', 'ignore').decode('latin-1')
+    pdf.multi_cell(0, 10, txt=clean_text)
+    return pdf.output(dest='S').encode('latin-1')
 
-if "ultima_ricetta" not in st.session_state:
-    st.session_state.ultima_ricetta = None
+# --- 4. GESTIONE SESSIONE ---
+if "user_id" not in st.session_state: st.session_state.user_id = None
+if "ultima_ricetta" not in st.session_state: st.session_state.ultima_ricetta = ""
 
-with tab1:
-    st.title("👨‍🍳 SvuotaFrigo AI")
-    ingredienti = st.text_input("Quali ingredienti hai?", placeholder="Es: Tonno, cipolla, pasta...")
-
-    if st.button("Genera Ricetta ✨"):
-        if ingredienti:
-            with st.spinner("L'AI sta cucinando per te..."):
-                prompt = f"""Crea una ricetta deliziosa usando: {ingredienti}. 
-                REGOLE: Usa SOLO tag HTML (<h1>, <h2>, <p>, <ul>, <li>). 
-                NON scrivere introduzioni tipo 'Ecco la ricetta'. 
-                Inizia direttamente con il titolo in <h1>."""
-                
+# --- 5. SIDEBAR LOGIN ---
+with st.sidebar:
+    st.title("👤 Account")
+    if not st.session_state.user_id:
+        with st.form("login_form"):
+            email = st.text_input("Email")
+            pwd = st.text_input("Password", type="password")
+            if st.form_submit_button("Accedi"):
                 try:
-                    completion = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
-                        messages=[{"role": "user", "content": prompt}]
-                    )
-                    # Pulizia automatica del risultato
-                    st.session_state.ultima_ricetta = super_clean(completion.choices[0].message.content)
-                except Exception as e:
-                    st.error(f"Errore nella generazione: {e}")
-        else:
-            st.warning("Ehi! Dimmi almeno un ingrediente.")
+                    res = supabase.auth.sign_in_with_password({"email": email, "password": pwd})
+                    st.session_state.user_id = res.user.id
+                    st.rerun()
+                except: st.error("Credenziali errate")
+    else:
+        st.success("Sei loggato!")
+        if st.button("Logout 🚪"):
+            st.session_state.clear()
+            st.rerun()
 
-    # Visualizzazione Risultato e Tasto Salva
+# --- 6. TAB INTERFACCIA ---
+t1, t2, t3, t4 = st.tabs(["🔥 Genera Ricetta", "📦 Dispensa", "🛒 Lista Spesa", "📖 Archivio"])
+
+with t1:
+    ing = st.text_area("Cosa hai in frigo?", placeholder="Esempio: 2 uova, farina, latte...")
+    
+    if st.button("Genera Ricetta ✨", use_container_width=True):
+        with st.spinner("Lo Chef AI sta scrivendo..."):
+            res = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": f"Rispondi SOLO con codice HTML (h1, h2, ul, li). Crea una ricetta con: {ing}. Inizia subito con <h1>"}]
+            )
+            st.session_state.ultima_ricetta = super_clean(res.choices[0].message.content)
+            st.rerun()
+
     if st.session_state.ultima_ricetta:
+        # Visualizzazione pulita della ricetta
         st.markdown(f'<div class="recipe-card">{st.session_state.ultima_ricetta}</div>', unsafe_allow_html=True)
         
-        st.write("---")
-        if st.button("💾 SALVA NELL'ARCHIVIO"):
-            try:
-                # Inserimento su Supabase (Tabella: ricette, Colonna: content)
-                data = {"content": st.session_state.ultima_ricetta}
-                supabase.table("ricette").insert(data).execute()
-                st.success("Ricetta salvata in Supabase!")
-            except Exception as e:
-                st.error(f"Errore nel salvataggio: {e}")
+        st.divider()
+        
+        # Pulsanti Azione
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.download_button("📄 Scarica PDF", data=format_pdf(st.session_state.ultima_ricetta), file_name="ricetta.pdf", use_container_width=True)
+        with col_b:
+            if st.session_state.user_id:
+                if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True, type="primary"):
+                    supabase.table("ricette").insert({
+                        "user_id": st.session_state.user_id, 
+                        "contenuto": st.session_state.ultima_ricetta
+                    }).execute()
+                    st.success("Salvata correttamente nel Tab Archivio!")
+            else:
+                st.warning("Accedi per salvare la ricetta")
 
-with tab2:
-    st.subheader("Le tue Ricette Salvate")
-    try:
-        response = supabase.table("ricette").select("*").order("created_at", desc=True).execute()
-        for ricetta in response.data:
-            with st.expander(f"Ricetta del {ricetta['created_at'][:10]}"):
-                st.markdown(ricetta['content'], unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Errore nel caricamento delle ricette: {e}")
+with t4:
+    st.header("📖 Le tue Ricette Salvate")
+    if st.session_state.user_id:
+        ricette = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).order("created_at", desc=True).execute().data
+        if not ricette:
+            st.info("Non hai ancora ricette salvate.")
+        for r in ricette:
+            with st.expander(f"🍴 Ricetta del {r['created_at'][:10]}"):
+                st.markdown(r['contenuto'], unsafe_allow_html=True)
+                if st.button("Elimina 🗑️", key=f"del_{r['id']}"):
+                    supabase.table("ricette").delete().eq("id", r['id']).execute()
+                    st.rerun()
+    else:
+        st.info("Esegui il login per vedere il tuo archivio personale.")
