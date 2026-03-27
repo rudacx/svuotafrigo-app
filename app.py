@@ -72,11 +72,13 @@ else:
     
     if st.session_state.is_premium == "Free":
         st.sidebar.markdown("---")
+        # GOLD
         st.sidebar.markdown('<div class="pro-box"><div class="pro-title">🥇 GOLD</div><div class="pro-price">9.99€</div></div>', unsafe_allow_html=True)
         if st.sidebar.button("SBLOCCA GOLD"):
             sess = stripe.checkout.Session.create(payment_method_types=['card'], line_items=[{'price': ID_GOLD, 'quantity': 1}], mode='subscription', success_url="https://svuotafrigo-app.streamlit.app/", cancel_url="https://svuotafrigo-app.streamlit.app/", customer_email=st.session_state.user_email)
             st.sidebar.link_button("💳 PAGA ORA", sess.url)
         
+        # DIAMOND
         st.sidebar.markdown('<div class="pro-box"><div class="pro-title">💎 DIAMOND</div><div class="pro-price">14.99€</div></div>', unsafe_allow_html=True)
         if st.sidebar.button("SBLOCCA DIAMOND"):
             sess = stripe.checkout.Session.create(payment_method_types=['card'], line_items=[{'price': ID_DIAMOND, 'quantity': 1}], mode='subscription', success_url="https://svuotafrigo-app.streamlit.app/", cancel_url="https://svuotafrigo-app.streamlit.app/", customer_email=st.session_state.user_email)
@@ -100,12 +102,11 @@ with t1:
             r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}])
             raw = r.choices[0].message.content
             
-            # Estrazione dati
             try:
                 st.session_state.ingredienti_estratti = raw.split("[LISTA]")[1].split("[/LISTA]")[0].strip().split(",")
                 st.session_state.ultima_ricetta = raw.split("[HTML]")[1].split("[/HTML]")[0].strip()
             except:
-                st.session_state.ultima_ricetta = raw # Fallback se l'IA sbaglia formato
+                st.session_state.ultima_ricetta = raw 
             
             if not st.session_state.user_id: st.session_state.count_ospite += 1
             st.rerun()
@@ -114,7 +115,6 @@ with t1:
         st.markdown(f'<div class="recipe-card">{st.session_state.ultima_ricetta}</div>', unsafe_allow_html=True)
         
         if st.session_state.user_id:
-            # Suggerimento Spesa Automatica
             st.subheader("🛒 Ti manca qualcosa?")
             disp = supabase.table("dispensa").select("ingrediente").eq("user_id", st.session_state.user_id).execute()
             lista_dispensa = [i['ingrediente'].lower() for i in disp.data]
@@ -124,14 +124,14 @@ with t1:
                 clean_item = item.strip().lower()
                 if clean_item not in lista_dispensa and clean_item != "":
                     if cols[idx % 3].button(f"+ {clean_item}", key=f"add_{idx}"):
-                        supabase.table("spesa").insert({"user_id": st.session_state.user_id, "item": clean_item}).execute()
+                        # CORREZIONE: 'prodotto' invece di 'item'
+                        supabase.table("spesa").insert({"user_id": st.session_state.user_id, "prodotto": clean_item}).execute()
                         st.toast(f"{clean_item} aggiunto alla spesa!")
 
-            # Salvataggio con limite
             res_count = supabase.table("ricette").select("id").eq("user_id", st.session_state.user_id).execute()
             num_salvate = len(res_count.data)
             if st.session_state.is_premium == "Free" and num_salvate >= 5:
-                st.warning(f"⚠️ Limite raggiunto ({num_salvate}/5). Passa a Premium!")
+                st.warning(f"⚠️ Limite raggiunto ({num_salvate}/5).")
             elif st.button("💾 SALVA IN ARCHIVIO", use_container_width=True):
                 supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
                 st.success("Salvata!")
@@ -141,7 +141,7 @@ with t2:
     st.header("📦 La tua Dispensa")
     if st.session_state.user_id:
         with st.form("disp"):
-            item = st.text_input("Cosa hai aggiunto?")
+            item = st.text_input("Aggiungi ingrediente")
             if st.form_submit_button("Inserisci"):
                 supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": item}).execute()
                 st.rerun()
@@ -163,7 +163,7 @@ with t3:
         lista = supabase.table("spesa").select("*").eq("user_id", st.session_state.user_id).execute()
         for s in lista.data:
             col1, col2 = st.columns([0.8, 0.2])
-            col1.write(f"🛒 {s['item']}")
+            col1.write(f"🛒 {s['prodotto']}") # CORRETTO: prodotto
             if col2.button("❌", key=f"del_spesa_{s['id']}"):
                 supabase.table("spesa").delete().eq("id", s['id']).execute()
                 st.rerun()
@@ -186,4 +186,4 @@ with t5:
         c = st.text_area("Suggerimenti")
         if st.button("Invia"):
             supabase.table("feedback").insert({"user_id": st.session_state.user_id, "voto": v, "commento": c}).execute()
-            st.success("Ricevuto!")
+            st.success("Grazie!")
