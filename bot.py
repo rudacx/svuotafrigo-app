@@ -6,48 +6,63 @@ from fpdf import FPDF
 import re
 import io
 
-# --- 1. CONFIGURAZIONI E CSS ---
-st.set_page_config(page_title="Svuotafrigo App", layout="wide")
+# --- 1. CONFIGURAZIONI E DESIGN PREMIUM (CSS) ---
+st.set_page_config(page_title="Svuotafrigo AI", layout="wide", initial_sidebar_state="expanded")
 
-# Manifest per PWA
-st.markdown('<link rel="manifest" href="./manifest.json">', unsafe_allow_html=True)
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    
+    /* Reset Font */
+    html, body, [class*="st-"] {
+        font-family: 'Inter', sans-serif;
+    }
 
-# CSS per il richiamo "Login qui!" e stile schede
-if "user_id" not in st.session_state or st.session_state.user_id is None:
-    st.markdown("""
-        <style>
-        @keyframes bounce {
-            0%, 20%, 50%, 80%, 100% {transform: translateX(0);}
-            40% {transform: translateX(10px);}
-            60% {transform: translateX(5px);}
-        }
-        .login-hint {
-            position: fixed;
-            top: 12px;
-            left: 60px;
-            z-index: 999999;
-            background-color: #ff4b4b;
-            color: white;
-            padding: 6px 15px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 14px;
-            animation: bounce 2s infinite;
-            box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
-        }
-        .login-hint:after {
-            content: '';
-            position: absolute;
-            left: -10px;
-            top: 50%;
-            margin-top: -10px;
-            border-top: 10px solid transparent;
-            border-bottom: 10px solid transparent;
-            border-right: 10px solid #ff4b4b;
-        }
-        </style>
-        <div class="login-hint">⬅️ Login qui!</div>
-    """, unsafe_allow_html=True)
+    /* Card della Ricetta */
+    .recipe-container {
+        background-color: #1a1c24;
+        border: 1px solid #30363d;
+        border-radius: 16px;
+        padding: 30px;
+        margin-top: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+    .recipe-container h2 { color: #ff4b4b; font-weight: 700; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
+    .recipe-container ul { list-style-type: none; padding-left: 0; }
+    .recipe-container li::before { content: "• "; color: #ff4b4b; font-weight: bold; }
+
+    /* Box Messaggio Errore/Login Personalizzato */
+    .login-lock-box {
+        background: rgba(255, 75, 75, 0.05);
+        border: 1px dashed #ff4b4b;
+        border-radius: 12px;
+        padding: 40px;
+        text-align: center;
+        margin: 20px 0;
+    }
+
+    /* Hint Login Animato in alto a sinistra */
+    .login-hint {
+        position: fixed; top: 12px; left: 60px; z-index: 9999;
+        background: linear-gradient(135deg, #ff4b4b, #ff7575);
+        color: white; padding: 8px 18px; border-radius: 50px;
+        font-weight: 600; font-size: 13px; animation: bounce 2s infinite;
+        box-shadow: 0 4px 15px rgba(255, 75, 75, 0.4);
+    }
+    @keyframes bounce { 0%, 20%, 50%, 80%, 100% {transform: translateX(0);} 40% {transform: translateX(10px);} 60% {transform: translateX(5px);} }
+
+    /* Miglioramento Bottoni */
+    .stButton>button {
+        border-radius: 10px;
+        font-weight: 600;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(255, 75, 75, 0.2);
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # API KEYS
 URL = "https://ixkrnsarskqgwwuudqms.supabase.co"
@@ -55,33 +70,16 @@ KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4
 GROQ_AD = "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"
 stripe.api_key = "sk_test_51TD7vwBBE2wDwi0CS5b18fA0sd6CqNclpupLdSZHVB9INo23zKGRErg3gtQL1ObzfztxfjCZY14wPUVQDBh98XeB00IeP2wsSK".strip()
 
-ID_GOLD = "price_1TD86OBBE2wDwi0CI4KlvKFJ"
-ID_DIAMOND = "price_1TD88HBBE2wDwi0CV9d2heo2"
-
 supabase = create_client(URL, KEY)
 client = Groq(api_key=GROQ_AD)
 
-# --- 2. FUNZIONI DI SUPPORTO ---
-def crea_sessione_stripe(id_prezzo):
-    try:
-        session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
-            line_items=[{'price': id_prezzo, 'quantity': 1}],
-            mode='subscription',
-            success_url="https://svuotafrigo-app-4cvkjntg8gklzrkp5sjbuh.streamlit.app/",
-            cancel_url="https://svuotafrigo-app-4cvkjntg8gklzrkp5sjbuh.streamlit.app/",
-        )
-        return session.url
-    except Exception as e:
-        st.error(f"Errore Stripe: {e}")
-        return None
-
+# --- 2. FUNZIONI UTILI ---
 def format_pdf(text):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    clean_text = re.sub('<[^<]+?>', '', text).encode('latin-1', 'ignore').decode('latin-1')
-    pdf.multi_cell(0, 10, txt=clean_text)
+    clean = re.sub('<[^<]+?>', '', text).encode('latin-1', 'ignore').decode('latin-1')
+    pdf.multi_cell(0, 10, txt=clean)
     return pdf.output(dest='S').encode('latin-1')
 
 def get_emoji(n):
@@ -91,176 +89,164 @@ def get_emoji(n):
         if k in n: return v
     return "🟢"
 
+def show_login_lock(sezione_nome):
+    st.markdown(f"""
+        <div class="login-lock-box">
+            <h2 style="color:#ff4b4b; margin:0;">🔒 Sezione Riservata</h2>
+            <p style="color:#8b949e; font-size:1.1em;">Accedi per salvare e gestire la tua {sezione_nome}.</p>
+        </div>
+    """, unsafe_allow_html=True)
+    if st.button(f"Vai al Login 👤", key=f"lock_{sezione_nome}", use_container_width=True):
+        st.info("Usa il menu a sinistra per entrare!")
+
 # --- 3. SESSION STATE ---
 if "user_id" not in st.session_state: st.session_state.user_id = None
-if "is_premium" not in st.session_state: st.session_state.is_premium = False
 if "nickname" not in st.session_state: st.session_state.nickname = ""
+if "is_premium" not in st.session_state: st.session_state.is_premium = False
 if "ultima_ricetta" not in st.session_state: st.session_state.ultima_ricetta = ""
-if "ing_input" not in st.session_state: st.session_state.ing_input = ""
-if "count_ospite" not in st.session_state: st.session_state.count_ospite = 0
 
-# --- 4. SIDEBAR ---
-st.sidebar.title("👤 Account")
+# --- 4. SIDEBAR (ACCOUNT) ---
 if st.session_state.user_id is None:
-    scelta = st.sidebar.selectbox("Cosa vuoi fare?", ["Login", "Crea Account", "Recupero Password"])
-    with st.sidebar.form("auth_form"):
-        email = st.text_input("Email")
-        pwd = st.text_input("Password", type="password") if scelta != "Recupero Password" else ""
-        nick = st.text_input("Nickname") if scelta == "Crea Account" else ""
-        if st.form_submit_button("Conferma"):
-            try:
-                if scelta == "Login":
-                    res = supabase.auth.sign_in_with_password({"email": email, "password": pwd})
-                    st.session_state.user_id = res.user.id
-                    p = supabase.table("profili").select("*").eq("id", res.user.id).execute()
-                    if p.data:
-                        st.session_state.nickname = p.data[0]["nickname"]
-                        st.session_state.is_premium = p.data[0]["is_premium"]
-                elif scelta == "Crea Account":
-                    res = supabase.auth.sign_up({"email": email, "password": pwd})
-                    if res.user:
-                        supabase.table("profili").insert({"id": res.user.id, "nickname": nick}).execute()
-                        st.success("Account creato! Fai il login.")
-                st.rerun()
-            except Exception as e: st.error(f"Errore: {e}")
+    st.markdown('<div class="login-hint">⬅️ Login qui!</div>', unsafe_allow_html=True)
+    with st.sidebar:
+        st.title("👤 Account")
+        modo = st.radio("Scegli:", ["Login", "Registrati"])
+        with st.form("auth_form"):
+            email = st.text_input("Email")
+            pwd = st.text_input("Password", type="password")
+            nick = st.text_input("Nickname") if modo == "Registrati" else ""
+            if st.form_submit_button("CONFERMA"):
+                try:
+                    if modo == "Login":
+                        res = supabase.auth.sign_in_with_password({"email": email, "password": pwd})
+                        st.session_state.user_id = res.user.id
+                        p = supabase.table("profili").select("*").eq("id", res.user.id).execute()
+                        if p.data: 
+                            st.session_state.nickname = p.data[0]["nickname"]
+                            st.session_state.is_premium = p.data[0].get("is_premium", False)
+                    else:
+                        res = supabase.auth.sign_up({"email": email, "password": pwd})
+                        if res.user:
+                            supabase.table("profili").insert({"id": res.user.id, "nickname": nick}).execute()
+                            st.success("Account creato! Fai il login.")
+                    st.rerun()
+                except Exception as e: st.error("Dati non validi")
 else:
-    st.sidebar.success(f"Ciao, {st.session_state.nickname}!")
-    st.sidebar.write(f"Piano: {'💎 DIAMOND' if st.session_state.is_premium else '👨‍🍳 STANDARD'}")
-    if not st.session_state.is_premium:
-        opzione = st.sidebar.radio("Upgrade:", ["Gold €9,99", "Diamond €19,99"])
-        if st.sidebar.button("Attiva Premium 💳"):
-            url = crea_sessione_stripe(ID_DIAMOND if "Diamond" in opzione else ID_GOLD)
-            if url: st.sidebar.link_button("Vai al pagamento", url)
-    if st.sidebar.button("Logout 🚪"):
-        st.session_state.clear()
-        st.rerun()
+    with st.sidebar:
+        st.success(f"Ciao, {st.session_state.nickname}!")
+        st.write(f"Piano: {'💎 DIAMOND' if st.session_state.is_premium else '👨‍🍳 STANDARD'}")
+        if st.button("Logout 🚪", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
 
-# --- 5. TABS ---
+# --- 5. TABS PRINCIPALI ---
 t1, t2, t3, t4, t5 = st.tabs(["🔥 Cucina AI", "📦 Dispensa", "🛒 Spesa", "📖 Archivio", "💬 Feedback"])
 
 with t1:
-    st.header("Generatore di Ricette")
-    if st.session_state.user_id:
-        if st.button("Carica dalla Dispensa 📦"):
-            items = supabase.table("dispensa").select("ingrediente").eq("user_id", st.session_state.user_id).execute()
-            if items.data:
-                st.session_state.ing_input = ", ".join([i['ingrediente'] for i in items.data])
-                st.rerun()
-    else:
-        st.info("💡 **Tip:** Effettua il login per usare la tua dispensa salvata!")
+    st.header("Chef Virtuale")
+    ing = st.text_area("Cosa hai in frigo oggi?", placeholder="Esempio: 2 uova, mezza cipolla, pasta...")
+    
+    col1, col2 = st.columns(2)
+    tempo = col1.select_slider("Tempo massimo:", ["15 min", "30 min", "60 min"])
+    mood = col2.selectbox("Stile Chef:", ["Simpatico", "Professionale", "Cattivissimo"])
 
-    ing = st.text_area("Cosa hai in frigo?", value=st.session_state.ing_input)
-    c1, c2 = st.columns(2)
-    tmp = c1.selectbox("Tempo", ["15 min", "30 min", "60 min"])
-    mod = c2.selectbox("Chef", ["Simpatico", "Professionale", "Cattivissimo"])
-
-    if st.button("Genera Ricetta ✨", use_container_width=True):
-        if not st.session_state.user_id and st.session_state.count_ospite >= 2:
-            st.warning("⚠️ Limite raggiunto! Accedi per generare infinite ricette.")
-        else:
-            with st.spinner("Lo Chef sta scrivendo..."):
-                macros = " Aggiungi tabella Macro e Kcal in HTML." if st.session_state.is_premium else ""
-                prompt = f"Sei uno chef {mod}. Crea ricetta HTML per: {ing}. Tempo: {tmp}.{macros}"
-                res = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
-                st.session_state.ultima_ricetta = res.choices[0].message.content
-                if not st.session_state.user_id: st.session_state.count_ospite += 1
+    if st.button("GENERA RICETTA ✨", use_container_width=True):
+        with st.spinner("Lo Chef sta creando un capolavoro..."):
+            prompt = f"Sei uno chef {mood}. Crea una ricetta HTML elegante (usa h2, li, strong) per questi ingredienti: {ing}. Tempo: {tempo}."
+            res = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
+            st.session_state.ultima_ricetta = res.choices[0].message.content
             st.rerun()
 
     if st.session_state.ultima_ricetta:
-        st.markdown(f'<div style="background:#1E1E1E; padding:25px; border-radius:15px; border-left:6px solid #ff4b4b; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); margin-bottom: 20px;">{st.session_state.ultima_ricetta}</div>', unsafe_allow_html=True)
-        col_v, col_p = st.columns(2)
-        with col_v:
+        st.markdown(f'<div class="recipe-container">{st.session_state.ultima_ricetta}</div>', unsafe_allow_html=True)
+        
+        cv, cp = st.columns(2)
+        with cv:
             if st.session_state.is_premium:
-                txt_clean = re.sub('<[^<]+?>', '', st.session_state.ultima_ricetta).replace("'", "\\'").replace("\n", " ")
+                txt_audio = re.sub('<[^<]+?>', '', st.session_state.ultima_ricetta).replace("'", "\\'").replace("\n", " ")
                 st.components.v1.html(f"""
-                    <div style="background: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; display: flex; align-items: center; justify-content: center; font-family: sans-serif;">
-                        <button id="playBtn" style="background: #ff4b4b; border: none; color: white; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 10px; transition: 0.3s;">
-                            <span id="icon">▶️</span> Ascolta la Ricetta
-                        </button>
-                    </div>
+                    <button id='speakBtn' style='width:100%; padding:12px; background:#ff4b4b; color:white; border:none; border-radius:10px; font-weight:700; cursor:pointer; font-family:sans-serif;'>🔊 ASCOLTA LA RICETTA</button>
                     <script>
-                        const btn = document.getElementById('playBtn');
-                        const icon = document.getElementById('icon');
+                        const btn = document.getElementById('speakBtn');
                         let speaking = false;
-                        const synth = window.speechSynthesis;
-                        const utter = new SpeechSynthesisUtterance('{txt_clean}');
-                        utter.lang = 'it-IT';
-                        utter.onend = () => {{ speaking = false; icon.innerText = '▶️'; btn.style.background = '#ff4b4b'; }};
                         btn.onclick = () => {{
-                            if(!speaking) {{ synth.speak(utter); speaking = true; icon.innerText = '⏸️'; btn.style.background = '#cc0000'; }}
-                            else {{ synth.cancel(); speaking = false; icon.innerText = '▶️'; btn.style.background = '#ff4b4b'; }}
+                            if(!speaking) {{
+                                const u = new SpeechSynthesisUtterance('{txt_audio}');
+                                u.lang = 'it-IT';
+                                u.onend = () => {{ speaking = false; btn.innerText = '🔊 ASCOLTA LA RICETTA'; }};
+                                window.speechSynthesis.speak(u);
+                                speaking = true;
+                                btn.innerText = '🛑 FERMA LETTURA';
+                            }} else {{
+                                window.speechSynthesis.cancel();
+                                speaking = false;
+                                btn.innerText = '🔊 ASCOLTA LA RICETTA';
+                            }}
                         }};
                     </script>
-                """, height=80)
+                """, height=70)
             else:
-                if st.button("🔊 Sblocca Voce (Premium)", use_container_width=True): st.toast("Passa a Diamond! 💎")
-        
-        pdf_data = format_pdf(st.session_state.ultima_ricetta)
-        col_p.download_button("📄 Scarica PDF", data=pdf_data, file_name="ricetta.pdf", mime="application/pdf", use_container_width=True)
+                if st.button("🔊 Sblocca Voce (Premium)", use_container_width=True):
+                    st.toast("Passa a Diamond per l'audio! 💎")
+        with cp:
+            pdf_file = format_pdf(st.session_state.ultima_ricetta)
+            st.download_button("📄 SCARICA PDF", data=pdf_file, file_name="ricetta.pdf", use_container_width=True)
 
 with t2:
-    st.header("📦 La tua Dispensa")
     if st.session_state.user_id:
-        n_i = st.text_input("Aggiungi ingrediente:")
-        if st.button("Salva ➕", key="save_disp"):
-            if n_i:
-                supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": n_i}).execute()
+        st.header("📦 La tua Dispensa")
+        nuovo = st.text_input("Aggiungi ingrediente:")
+        if st.button("Salva ➕"):
+            if nuovo:
+                supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": nuovo}).execute()
                 st.rerun()
-        for i in supabase.table("dispensa").select("*").eq("user_id", st.session_state.user_id).execute().data:
-            c1, c2 = st.columns([4,1])
-            c1.write(f"{get_emoji(i['ingrediente'])} {i['ingrediente']}")
-            if c2.button("🗑️", key=f"d_{i['id']}"):
+        
+        items = supabase.table("dispensa").select("*").eq("user_id", st.session_state.user_id).execute().data
+        for i in items:
+            c1, c2 = st.columns([5,1])
+            c1.write(f"{get_emoji(i['ingrediente'])} **{i['ingrediente']}**")
+            if c2.button("🗑️", key=f"del_{i['id']}"):
                 supabase.table("dispensa").delete().eq("id", i['id']).execute()
                 st.rerun()
-    else:
-        st.error("🔒 Loggati per gestire la tua dispensa!")
-        if st.button("Vai al Login 👤", key="btn_t2"): st.info("Apri il menu in alto a sinistra!")
-        st.info("Apri il menu in alto a sinistra!")
+    else: show_login_lock("Dispensa")
 
 with t3:
-    st.header("🛒 Lista della Spesa")
     if st.session_state.user_id:
-        m = st.text_input("Cosa devi comprare?")
-        if st.button("Aggiungi 🛒", key="add_spesa"):
-            if m:
-                supabase.table("lista_spesa").insert({"user_id": st.session_state.user_id, "item": m}).execute()
+        st.header("🛒 Lista Spesa")
+        sp_item = st.text_input("Cosa manca?")
+        if st.button("Aggiungi a Spesa"):
+            if sp_item:
+                supabase.table("lista_spesa").insert({"user_id": st.session_state.user_id, "item": sp_item}).execute()
                 st.rerun()
-        for s in supabase.table("lista_spesa").select("*").eq("user_id", st.session_state.user_id).execute().data:
-            c1, c2 = st.columns([4,1])
+        
+        lista = supabase.table("lista_spesa").select("*").eq("user_id", st.session_state.user_id).execute().data
+        for s in lista:
+            c1, c2 = st.columns([5,1])
             c1.write(f"⬜ {s['item']}")
-            if c2.button("✔️", key=f"s_{s['id']}"):
+            if c2.button("✔️", key=f"check_{s['id']}"):
                 supabase.table("lista_spesa").delete().eq("id", s['id']).execute()
                 st.rerun()
-    else:
-        st.error("🔒 Loggati per salvare la lista della spesa!")
-        if st.button("Vai al Login 👤", key="btn_t3"): st.info("Apri il menu in alto a sinistra!")
-        st.info("Apri il menu in alto a sinistra!")
+    else: show_login_lock("Lista Spesa")
 
 with t4:
-    st.header("📖 Archivio Ricette")
     if st.session_state.user_id:
-        mie = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute()
-        if not mie.data: st.info("Nessuna ricetta salvata.")
-        for r in mie.data:
-            with st.expander(f"Ricetta {r['created_at'][:10]}"):
+        st.header("📖 Archivio Ricette")
+        ricette = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute().data
+        if not ricette: st.info("Ancora nessuna ricetta salvata.")
+        for r in ricette:
+            with st.expander(f"🍴 Ricetta del {r['created_at'][:10]}"):
                 st.markdown(r['contenuto'], unsafe_allow_html=True)
-                if st.button("Elimina", key=f"del_{r['id']}"):
+                if st.button("Elimina", key=f"dr_{r['id']}"):
                     supabase.table("ricette").delete().eq("id", r['id']).execute()
                     st.rerun()
-    else:
-        st.error("🔒 Loggati per consultare il tuo archivio!")
-        if st.button("Vai al Login 👤", key="btn_t4"): st.info("Apri il menu in alto a sinistra!")
-        st.info("Apri il menu in alto a sinistra!")
+    else: show_login_lock("Archivio")
 
 with t5:
-    st.header("Feedback 📣")
     if st.session_state.user_id:
-        f = st.text_area("Come possiamo migliorare?")
-        if st.button("Invia 🚀", key="send_f"):
-            if f:
-                supabase.table("feedback").insert({"user_id": st.session_state.user_id, "messaggio": f}).execute()
-                st.success("Ricevuto, grazie!")
-    else:
-        st.error("🔒 Loggati per inviare un feedback!")
-        if st.button("Vai al Login 👤", key="btn_t5"): st.info("Apri il menu in alto a sinistra!")
-        st.info("Apri il menu in alto a sinistra!")
+        st.header("Feedback 📣")
+        f_msg = st.text_area("Suggerimenti?")
+        if st.button("Invia Feedback"):
+            if f_msg:
+                supabase.table("feedback").insert({"user_id":st.session_state.user_id, "messaggio":f_msg}).execute()
+                st.success("Grazie mille!")
+    else: show_login_lock("Feedback")
