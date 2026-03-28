@@ -152,6 +152,9 @@ with t2:
             if c2.button("🗑️", key=f"del_disp_{i['id']}"):
                 supabase.table("dispensa").delete().eq("id", i['id']).execute()
                 st.rerun()
+        else:
+            st.warning("Loggati per vedere la dispensa!")
+    
 
 with t3:
     st.header("🛒 Lista della Spesa")
@@ -167,6 +170,9 @@ with t3:
             if col2.button("❌", key=f"del_spesa_{s['id']}"):
                 supabase.table("spesa").delete().eq("id", s['id']).execute()
                 st.rerun()
+            else:
+             st.warning("Loggati per vedere la lista della spesa!")
+
 
 with t4:
     st.header("📖 Ricette Salvate")
@@ -178,6 +184,8 @@ with t4:
                 if st.button("Elimina", key=f"del_ric_{r['id']}"):
                     supabase.table("ricette").delete().eq("id", r['id']).execute()
                     st.rerun()
+    else:
+        st.warning("Loggati per vedere le ricette salvate!")
 
 with t5:
     st.header("💬 Feedback")
@@ -193,7 +201,7 @@ with t5:
                     "voto": v, 
                     "messaggio": c
                 }).execute()
-                st.success("Daje! Feedback inviato con successo.")
+                st.success("Feedback inviato con successo.")
             except Exception as e:
                 st.error(f"Errore: {e}")
     else:
