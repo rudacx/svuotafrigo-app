@@ -73,14 +73,14 @@ else:
     if st.session_state.is_premium == "Free":
         st.sidebar.markdown("---")
         st.sidebar.markdown('<div class="pro-box"><div class="pro-title">🥇 GOLD</div><div class="pro-price">9.99€</div></div>', unsafe_allow_html=True)
-        if st.sidebar.button("SBLOCCA GOLD"):
+        if st.sidebar.button("SBLOCCA LIMITE"):
             sess = stripe.checkout.Session.create(payment_method_types=['card'], line_items=[{'price': ID_GOLD, 'quantity': 1}], mode='subscription', success_url="https://svuotafrigo-app.streamlit.app/", cancel_url="https://svuotafrigo-app.streamlit.app/", customer_email=st.session_state.user_email)
             st.sidebar.link_button("💳 PAGA ORA", sess.url)
         
         st.sidebar.markdown('<div class="pro-box"><div class="pro-title">💎 DIAMOND</div><div class="pro-price">14.99€</div></div>', unsafe_allow_html=True)
         if st.sidebar.button("SBLOCCA DIAMOND"):
             sess = stripe.checkout.Session.create(payment_method_types=['card'], line_items=[{'price': ID_DIAMOND, 'quantity': 1}], mode='subscription', success_url="https://svuotafrigo-app.streamlit.app/", cancel_url="https://svuotafrigo-app.streamlit.app/", customer_email=st.session_state.user_email)
-            st.sidebar.link_button("💳 DIVENTA DIAMANTE", sess.url)
+            st.sidebar.link_button("💎 DIVENTA DIAMANTE", sess.url)
 
     if st.sidebar.button("Logout 🚪", use_container_width=True):
         st.session_state.clear()
@@ -92,29 +92,25 @@ t1, t2, t3, t4, t5 = st.tabs(["🔥 CUCINA", "📦 DISPENSA", "🛒 SPESA", "�
 with t1:
     st.title("👨‍🍳 Svuotafrigo AI")
     lock_guest = not st.session_state.user_id and st.session_state.count_ospite >= 2
+    if lock_guest: st.warning("Limite ospiti raggiunto. Accedi per continuare!")
+    
     ing = st.text_area("Cosa hai in frigo?")
     
     if st.button("GENERA ✨", use_container_width=True, disabled=lock_guest):
         with st.spinner("Lo Chef sta scrivendo..."):
             prompt = f"""Crea una ricetta con {ing}. 
-            Rispondi SEMPRE seguendo rigorosamente questo formato:
-            [LISTA] ingrediente 1, ingrediente 2 [/LISTA] 
+            Rispondi SEMPRE in questo formato preciso:
+            [LISTA] ingrediente1, ingrediente2 [/LISTA]
             [HTML] 
-            <h2 style='color: #00FFAA;'>🍳 Titolo della Ricetta</h2>
-            <hr>
-            <h4 style='color: #00FFAA;'>🛒 Ingredienti:</h4>
-            <ul><li>Dettaglio ingrediente...</li></ul>
-            <h4 style='color: #00FFAA;'>👨‍🍳 Preparazione:</h4>
-            <ol><li>Passaggio...</li></ol>
-            <br>
-            <div style='background: #252b36; padding: 15px; border-radius: 10px; border-left: 5px solid #00FFAA;'>
-                <strong>💡 Il tocco dello Chef:</strong> Consiglio...
-            </div>
+            <h2 style='color: #00FFAA;'>🍳 Titolo</h2>
+            <h4 style='color: #00FFAA;'>🛒 Ingredienti:</h4><ul><li>...</li></ul>
+            <h4 style='color: #00FFAA;'>👨‍🍳 Preparazione:</h4><ol><li>...</li></ol>
             [/HTML]"""
             r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}])
             raw = r.choices[0].message.content
             
             try:
+                # Estraiamo i dati ma salviamo solo l'HTML pulito per la visualizzazione
                 st.session_state.ingredienti_estratti = raw.split("[LISTA]")[1].split("[/LISTA]")[0].strip().split(",")
                 st.session_state.ultima_ricetta = raw.split("[HTML]")[1].split("[/HTML]")[0].strip()
             except:
@@ -124,7 +120,9 @@ with t1:
             st.rerun()
 
     if st.session_state.ultima_ricetta:
-        st.markdown(f'<div class="recipe-card">{st.session_state.ultima_ricetta}</div>', unsafe_allow_html=True)
+        # VISUALIZZAZIONE PULITA: Mostriamo solo il contenuto HTML senza i tag tecnici
+        mostra_ricetta = st.session_state.ultima_ricetta.replace("[HTML]", "").replace("[/HTML]", "")
+        st.markdown(f'<div class="recipe-card">{mostra_ricetta}</div>', unsafe_allow_html=True)
         
         if st.session_state.user_id:
             st.subheader("🛒 Ti manca qualcosa?")
@@ -141,12 +139,14 @@ with t1:
 
             res_count = supabase.table("ricette").select("id").eq("user_id", st.session_state.user_id).execute()
             num_salvate = len(res_count.data)
+            
             if st.session_state.is_premium == "Free" and num_salvate >= 5:
-                st.warning(f"⚠️ Limite raggiunto ({num_salvate}/5).")
-            elif st.button("💾 SALVA IN ARCHIVIO", use_container_width=True):
-                supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
-                st.success("Salvata!")
-                st.rerun()
+                st.warning(f"⚠️ Hai raggiunto il limite di 5 ricette.")
+            else:
+                if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True):
+                    supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
+                    st.success("Salvata!")
+                    st.rerun()
 
 with t2:
     st.header("📦 La tua Dispensa")
@@ -170,7 +170,6 @@ with t3:
         if st.button("🗑️ SVUOTA TUTTA LA LISTA"):
             supabase.table("spesa").delete().eq("user_id", st.session_state.user_id).execute()
             st.rerun()
-        
         lista = supabase.table("spesa").select("*").eq("user_id", st.session_state.user_id).execute()
         for s in lista.data:
             col1, col2 = st.columns([0.8, 0.2])
@@ -180,12 +179,14 @@ with t3:
                 st.rerun()
 
 with t4:
-    st.header("📖 Ricette Salvate")
+    st.header("📖 Archivio")
     if st.session_state.user_id:
         res = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute()
         for r in res.data:
             with st.expander(f"Ricetta del {r['created_at'][:10]}"):
-                st.markdown(r['contenuto'], unsafe_allow_html=True)
+                # Anche qui puliamo i tag prima di mostrare nell'archivio
+                archivio_puro = r['contenuto'].replace("[HTML]", "").replace("[/HTML]", "")
+                st.markdown(archivio_puro, unsafe_allow_html=True)
                 if st.button("Elimina", key=f"del_ric_{r['id']}"):
                     supabase.table("ricette").delete().eq("id", r['id']).execute()
                     st.rerun()
@@ -194,10 +195,9 @@ with t5:
     st.header("💬 Feedback")
     if st.session_state.user_id:
         v = st.slider("Voto", 1, 5, 5)
-        c = st.text_area("Cosa ne pensi dell'app?")
+        c = st.text_area("Cosa ne pensi?")
         if st.button("Invia Feedback"):
             try:
                 supabase.table("feedback").insert({"user_id": st.session_state.user_id, "voto": v, "messaggio": c}).execute()
-                st.success("Daje! Feedback inviato.")
-            except Exception as e:
-                st.error(f"Errore: {e}")
+                st.success("Daje! Inviato.")
+            except Exception as e: st.error(f"Errore: {e}")
