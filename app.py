@@ -72,13 +72,11 @@ else:
     
     if st.session_state.is_premium == "Free":
         st.sidebar.markdown("---")
-        # GOLD
         st.sidebar.markdown('<div class="pro-box"><div class="pro-title">🥇 GOLD</div><div class="pro-price">9.99€</div></div>', unsafe_allow_html=True)
         if st.sidebar.button("SBLOCCA GOLD"):
             sess = stripe.checkout.Session.create(payment_method_types=['card'], line_items=[{'price': ID_GOLD, 'quantity': 1}], mode='subscription', success_url="https://svuotafrigo-app.streamlit.app/", cancel_url="https://svuotafrigo-app.streamlit.app/", customer_email=st.session_state.user_email)
             st.sidebar.link_button("💳 PAGA ORA", sess.url)
         
-        # DIAMOND
         st.sidebar.markdown('<div class="pro-box"><div class="pro-title">💎 DIAMOND</div><div class="pro-price">14.99€</div></div>', unsafe_allow_html=True)
         if st.sidebar.button("SBLOCCA DIAMOND"):
             sess = stripe.checkout.Session.create(payment_method_types=['card'], line_items=[{'price': ID_DIAMOND, 'quantity': 1}], mode='subscription', success_url="https://svuotafrigo-app.streamlit.app/", cancel_url="https://svuotafrigo-app.streamlit.app/", customer_email=st.session_state.user_email)
@@ -98,7 +96,21 @@ with t1:
     
     if st.button("GENERA ✨", use_container_width=True, disabled=lock_guest):
         with st.spinner("Lo Chef sta scrivendo..."):
-            prompt = f"Crea una ricetta con {ing}. Rispondi SEMPRE con questo formato: [LISTA] ingrediente1, ingrediente2 [/LISTA] [HTML] testo HTML della ricetta [/HTML]"
+            prompt = f"""Crea una ricetta con {ing}. 
+            Rispondi SEMPRE seguendo rigorosamente questo formato:
+            [LISTA] ingrediente 1, ingrediente 2 [/LISTA] 
+            [HTML] 
+            <h2 style='color: #00FFAA;'>🍳 Titolo della Ricetta</h2>
+            <hr>
+            <h4 style='color: #00FFAA;'>🛒 Ingredienti:</h4>
+            <ul><li>Dettaglio ingrediente...</li></ul>
+            <h4 style='color: #00FFAA;'>👨‍🍳 Preparazione:</h4>
+            <ol><li>Passaggio...</li></ol>
+            <br>
+            <div style='background: #252b36; padding: 15px; border-radius: 10px; border-left: 5px solid #00FFAA;'>
+                <strong>💡 Il tocco dello Chef:</strong> Consiglio...
+            </div>
+            [/HTML]"""
             r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}])
             raw = r.choices[0].message.content
             
@@ -124,7 +136,6 @@ with t1:
                 clean_item = item.strip().lower()
                 if clean_item not in lista_dispensa and clean_item != "":
                     if cols[idx % 3].button(f"+ {clean_item}", key=f"add_{idx}"):
-                        # CORREZIONE: 'prodotto' invece di 'item'
                         supabase.table("spesa").insert({"user_id": st.session_state.user_id, "prodotto": clean_item}).execute()
                         st.toast(f"{clean_item} aggiunto alla spesa!")
 
@@ -145,7 +156,6 @@ with t2:
             if st.form_submit_button("Inserisci"):
                 supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": item}).execute()
                 st.rerun()
-
         res = supabase.table("dispensa").select("*").eq("user_id", st.session_state.user_id).execute()
         for i in res.data:
             c1, c2 = st.columns([0.8, 0.2])
@@ -153,9 +163,6 @@ with t2:
             if c2.button("🗑️", key=f"del_disp_{i['id']}"):
                 supabase.table("dispensa").delete().eq("id", i['id']).execute()
                 st.rerun()
-    else:
-        st.warning("Loggati per vedere la dispensa!")
-    
 
 with t3:
     st.header("🛒 Lista della Spesa")
@@ -167,13 +174,10 @@ with t3:
         lista = supabase.table("spesa").select("*").eq("user_id", st.session_state.user_id).execute()
         for s in lista.data:
             col1, col2 = st.columns([0.8, 0.2])
-            col1.write(f"🛒 {s['prodotto']}")
+            col1.write(f"🛒 {s['prodotto']}") 
             if col2.button("❌", key=f"del_spesa_{s['id']}"):
                 supabase.table("spesa").delete().eq("id", s['id']).execute()
                 st.rerun()
-    else:
-        st.warning("Loggati per vedere la lista della spesa!")
-
 
 with t4:
     st.header("📖 Ricette Salvate")
@@ -185,25 +189,15 @@ with t4:
                 if st.button("Elimina", key=f"del_ric_{r['id']}"):
                     supabase.table("ricette").delete().eq("id", r['id']).execute()
                     st.rerun()
-    else:
-        st.warning("Loggati per vedere le ricette salvate!")
 
 with t5:
     st.header("💬 Feedback")
     if st.session_state.user_id:
         v = st.slider("Voto", 1, 5, 5)
         c = st.text_area("Cosa ne pensi dell'app?")
-        
         if st.button("Invia Feedback"):
             try:
-                # CORREZIONE: Uso 'messaggio' invece di 'commento'
-                supabase.table("feedback").insert({
-                    "user_id": st.session_state.user_id, 
-                    "voto": v, 
-                    "messaggio": c
-                }).execute()
-                st.success("Feedback inviato con successo.")
+                supabase.table("feedback").insert({"user_id": st.session_state.user_id, "voto": v, "messaggio": c}).execute()
+                st.success("Daje! Feedback inviato.")
             except Exception as e:
                 st.error(f"Errore: {e}")
-    else:
-        st.warning("Ehilà Chef, devi loggarti per lasciare un feedback!")
