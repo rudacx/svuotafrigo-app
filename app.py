@@ -183,7 +183,18 @@ with t5:
     st.header("💬 Feedback")
     if st.session_state.user_id:
         v = st.slider("Voto", 1, 5, 5)
-        c = st.text_area("Suggerimenti")
-        if st.button("Invia"):
-            supabase.table("feedback").insert({"user_id": st.session_state.user_id, "voto": v, "commento": c}).execute()
-            st.success("Grazie!")
+        c = st.text_area("Cosa ne pensi dell'app?")
+        
+        if st.form_submit_button("Invia Feedback") or st.button("Invia"):
+            try:
+                # CORREZIONE: Uso 'messaggio' invece di 'commento'
+                supabase.table("feedback").insert({
+                    "user_id": st.session_state.user_id, 
+                    "voto": v, 
+                    "messaggio": c
+                }).execute()
+                st.success("Daje! Feedback inviato con successo.")
+            except Exception as e:
+                st.error(f"Errore: {e}")
+    else:
+        st.warning("Ehilà Chef, devi loggarti per lasciare un feedback!")
