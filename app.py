@@ -194,7 +194,7 @@ with t5:
         v = st.slider("Voto", 1, 5, 5)
         c = st.text_area("Cosa ne pensi dell'app?")
         
-        if st.form_submit_button("Invia Feedback") or st.button("Invia"):
+        if st.button("Invia Feedback"):
             try:
                 # CORREZIONE: Uso 'messaggio' invece di 'commento'
                 supabase.table("feedback").insert({
