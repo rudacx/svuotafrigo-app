@@ -145,6 +145,7 @@ with t2:
             if st.form_submit_button("Inserisci"):
                 supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": item}).execute()
                 st.rerun()
+
         res = supabase.table("dispensa").select("*").eq("user_id", st.session_state.user_id).execute()
         for i in res.data:
             c1, c2 = st.columns([0.8, 0.2])
@@ -152,8 +153,8 @@ with t2:
             if c2.button("🗑️", key=f"del_disp_{i['id']}"):
                 supabase.table("dispensa").delete().eq("id", i['id']).execute()
                 st.rerun()
-            else:
-             st.warning("Loggati per vedere la dispensa!")
+    else:
+        st.warning("Loggati per vedere la dispensa!")
     
 
 with t3:
@@ -166,12 +167,12 @@ with t3:
         lista = supabase.table("spesa").select("*").eq("user_id", st.session_state.user_id).execute()
         for s in lista.data:
             col1, col2 = st.columns([0.8, 0.2])
-            col1.write(f"🛒 {s['prodotto']}") # CORRETTO: prodotto
+            col1.write(f"🛒 {s['prodotto']}")
             if col2.button("❌", key=f"del_spesa_{s['id']}"):
                 supabase.table("spesa").delete().eq("id", s['id']).execute()
                 st.rerun()
-            else:
-             st.warning("Loggati per vedere la lista della spesa!")
+    else:
+        st.warning("Loggati per vedere la lista della spesa!")
 
 
 with t4:
