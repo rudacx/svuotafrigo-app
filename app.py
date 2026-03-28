@@ -152,8 +152,8 @@ with t2:
             if c2.button("🗑️", key=f"del_disp_{i['id']}"):
                 supabase.table("dispensa").delete().eq("id", i['id']).execute()
                 st.rerun()
-        else:
-            st.warning("Loggati per vedere la dispensa!")
+            else:
+             st.warning("Loggati per vedere la dispensa!")
     
 
 with t3:
