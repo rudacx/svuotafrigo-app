@@ -117,8 +117,7 @@ with t1:
                 if not st.session_state.user_id: st.session_state.count_ospite += 1
                 st.rerun()
             except Exception as e:
-                st.error("Errore di comunicazione con l'IA. Riprova più tardi.")
-
+                st.error(f"Errore tecnico: {e}")
     if st.session_state.ultima_ricetta:
         mostra_ricetta = st.session_state.ultima_ricetta.replace("[HTML]", "").replace("[/HTML]", "")
         st.markdown(f'<div class="recipe-card">{mostra_ricetta}</div>', unsafe_allow_html=True)
