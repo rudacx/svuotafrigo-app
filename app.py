@@ -21,14 +21,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CONNESSIONI ---
-GROQ_API_KEY="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"
-SUPABASE_URL="https://ixkrnsarskqgwwuudqms.supabase.co"
-SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4a3Juc2Fyc2txZ3d3dXVkcW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5Mjk5NDYsImV4cCI6MjA4OTUwNTk0Nn0.2_5BIu8g6bfjki91Uk_syMC7g8OTtQIb8yYnApEz3j8"
-STRIPE_API_KEY="sk_test_51TD7vwBBE2wDwi0CS5b18fA0sd6CqNclpupLdSZHVB9INo23zKGRErg3gtQL1ObzfztxfjCZY14wPUVQDBh98XeB00IeP2wsSK"
+# --- 2. CONNESSIONI (Prese dai Secrets di Streamlit) ---
+URL = st.secrets["SUPABASE_URL"]
+KEY = st.secrets["SUPABASE_KEY"]
+GROQ_AD = st.secrets["GROQ_API_KEY"]
+stripe.api_key = st.secrets["STRIPE_API_KEY"]
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-client = Groq(api_key=GROQ_API_KEY)
+supabase = create_client(URL, KEY)
+client = Groq(api_key=GROQ_AD)
 
 ID_GOLD = "price_1TD86OBBE2wDwi0CI4KlvKFJ"   
 ID_DIAMOND = "price_1TD88HBBE2wDwi0CV9d2heo2"
@@ -107,17 +107,17 @@ with t1:
             <h4 style='color: #00FFAA;'>🛒 Ingredienti:</h4><ul><li>...</li></ul>
             <h4 style='color: #00FFAA;'>👨‍🍳 Preparazione:</h4><ol><li>...</li></ol>
             [/HTML]"""
-            r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}])
-            raw = r.choices[0].message.content
-            
             try:
+                r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}])
+                raw = r.choices[0].message.content
+                
                 st.session_state.ingredienti_estratti = raw.split("[LISTA]")[1].split("[/LISTA]")[0].strip().split(",")
                 st.session_state.ultima_ricetta = raw.split("[HTML]")[1].split("[/HTML]")[0].strip()
-            except:
-                st.session_state.ultima_ricetta = raw 
-            
-            if not st.session_state.user_id: st.session_state.count_ospite += 1
-            st.rerun()
+                
+                if not st.session_state.user_id: st.session_state.count_ospite += 1
+                st.rerun()
+            except Exception as e:
+                st.error("Errore di comunicazione con l'IA. Riprova più tardi.")
 
     if st.session_state.ultima_ricetta:
         mostra_ricetta = st.session_state.ultima_ricetta.replace("[HTML]", "").replace("[/HTML]", "")
@@ -126,8 +126,9 @@ with t1:
         # --- FUNZIONE CONDIVISIONE (PREMIUM) ---
         if st.session_state.is_premium != "Free":
             st.markdown("### 📲 Condividi la ricetta")
-            testo_clean = mostra_ricetta.replace("<li>", "- ").replace("</li>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<h2>", "*").replace("</h2>", "*\n").replace("<h4>", "*").replace("</h4>", "*\n").replace("<ol>", "").replace("</ol>", "").replace("<hr>", "---")
-            msg_whatsapp = urllib.parse.quote(f"Ciao! Guarda questa ricetta creata con Svuotafrigo AI:\n\n{testo_clean}")
+            # Pulizia HTML per rendere il testo leggibile su WhatsApp
+            testo_wa = mostra_ricetta.replace("<li>", "- ").replace("</li>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<h2>", "*").replace("</h2>", "*\n").replace("<h4>", "*").replace("</h4>", "*\n").replace("<ol>", "").replace("</ol>", "").replace("<hr>", "---")
+            msg_whatsapp = urllib.parse.quote(f"Guarda questa ricetta di Svuotafrigo AI!\n\n{testo_wa}")
             st.link_button("🟢 Invia su WhatsApp", f"https://wa.me/?text={msg_whatsapp}")
 
         if st.session_state.user_id:
@@ -147,7 +148,7 @@ with t1:
             num_salvate = len(res_count.data)
             
             if st.session_state.is_premium == "Free" and num_salvate >= 5:
-                st.warning(f"⚠️ Hai raggiunto il limite di 5 ricette.")
+                st.warning(f"⚠️ Hai raggiunto il limite di 5 ricette salvate.")
             else:
                 if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True):
                     supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
