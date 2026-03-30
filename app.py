@@ -2,6 +2,7 @@ import streamlit as st
 import stripe
 from groq import Groq
 from supabase import create_client
+import urllib.parse
 
 # --- 1. CONFIGURAZIONE E STILE ---
 st.set_page_config(page_title="Svuotafrigo Pro", layout="wide")
@@ -110,7 +111,6 @@ with t1:
             raw = r.choices[0].message.content
             
             try:
-                # Estraiamo i dati ma salviamo solo l'HTML pulito per la visualizzazione
                 st.session_state.ingredienti_estratti = raw.split("[LISTA]")[1].split("[/LISTA]")[0].strip().split(",")
                 st.session_state.ultima_ricetta = raw.split("[HTML]")[1].split("[/HTML]")[0].strip()
             except:
@@ -120,10 +120,16 @@ with t1:
             st.rerun()
 
     if st.session_state.ultima_ricetta:
-        # VISUALIZZAZIONE PULITA: Mostriamo solo il contenuto HTML senza i tag tecnici
         mostra_ricetta = st.session_state.ultima_ricetta.replace("[HTML]", "").replace("[/HTML]", "")
         st.markdown(f'<div class="recipe-card">{mostra_ricetta}</div>', unsafe_allow_html=True)
         
+        # --- FUNZIONE CONDIVISIONE (PREMIUM) ---
+        if st.session_state.is_premium != "Free":
+            st.markdown("### 📲 Condividi la ricetta")
+            testo_clean = mostra_ricetta.replace("<li>", "- ").replace("</li>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<h2>", "*").replace("</h2>", "*\n").replace("<h4>", "*").replace("</h4>", "*\n").replace("<ol>", "").replace("</ol>", "").replace("<hr>", "---")
+            msg_whatsapp = urllib.parse.quote(f"Ciao! Guarda questa ricetta creata con Svuotafrigo AI:\n\n{testo_clean}")
+            st.link_button("🟢 Invia su WhatsApp", f"https://wa.me/?text={msg_whatsapp}")
+
         if st.session_state.user_id:
             st.subheader("🛒 Ti manca qualcosa?")
             disp = supabase.table("dispensa").select("ingrediente").eq("user_id", st.session_state.user_id).execute()
@@ -163,6 +169,8 @@ with t2:
             if c2.button("🗑️", key=f"del_disp_{i['id']}"):
                 supabase.table("dispensa").delete().eq("id", i['id']).execute()
                 st.rerun()
+    else:
+        st.info("👋 Hey Chef! Per gestire la tua dispensa personale devi prima loggarti.")
 
 with t3:
     st.header("🛒 Lista della Spesa")
@@ -177,6 +185,8 @@ with t3:
             if col2.button("❌", key=f"del_spesa_{s['id']}"):
                 supabase.table("spesa").delete().eq("id", s['id']).execute()
                 st.rerun()
+    else:
+        st.info("🛒 La lista della spesa intelligente è disponibile solo per gli utenti registrati.")
 
 with t4:
     st.header("📖 Archivio")
@@ -184,12 +194,13 @@ with t4:
         res = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute()
         for r in res.data:
             with st.expander(f"Ricetta del {r['created_at'][:10]}"):
-                # Anche qui puliamo i tag prima di mostrare nell'archivio
                 archivio_puro = r['contenuto'].replace("[HTML]", "").replace("[/HTML]", "")
                 st.markdown(archivio_puro, unsafe_allow_html=True)
                 if st.button("Elimina", key=f"del_ric_{r['id']}"):
                     supabase.table("ricette").delete().eq("id", r['id']).execute()
                     st.rerun()
+    else:
+        st.warning("📖 Vuoi salvare le tue creazioni? Accedi per sbloccare l'archivio.")
 
 with t5:
     st.header("💬 Feedback")
@@ -201,3 +212,5 @@ with t5:
                 supabase.table("feedback").insert({"user_id": st.session_state.user_id, "voto": v, "messaggio": c}).execute()
                 st.success("Daje! Inviato.")
             except Exception as e: st.error(f"Errore: {e}")
+    else:
+        st.info("💬 La tua opinione conta! Accedi per lasciarci un feedback.")
