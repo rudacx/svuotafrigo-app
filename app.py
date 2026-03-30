@@ -22,13 +22,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. CONNESSIONI ---
-URL = st.secrets["SUPABASE_URL"]
-KEY = st.secrets["SUPABASE_KEY"]
-GROQ_AD = st.secrets["GROQ_API_KEY"]
-stripe.api_key = st.secrets["STRIPE_API_KEY"]
+GROQ_API_KEY="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"
+SUPABASE_URL="https://ixkrnsarskqgwwuudqms.supabase.co"
+SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4a3Juc2Fyc2txZ3d3dXVkcW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5Mjk5NDYsImV4cCI6MjA4OTUwNTk0Nn0.2_5BIu8g6bfjki91Uk_syMC7g8OTtQIb8yYnApEz3j8"
+STRIPE_API_KEY="sk_test_51TD7vwBBE2wDwi0CS5b18fA0sd6CqNclpupLdSZHVB9INo23zKGRErg3gtQL1ObzfztxfjCZY14wPUVQDBh98XeB00IeP2wsSK"
 
-supabase = create_client(URL, KEY)
-client = Groq(api_key=GROQ_AD)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+client = Groq(api_key=GROQ_API_KEY)
 
 ID_GOLD = "price_1TD86OBBE2wDwi0CI4KlvKFJ"   
 ID_DIAMOND = "price_1TD88HBBE2wDwi0CV9d2heo2"
