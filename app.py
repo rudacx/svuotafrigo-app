@@ -21,7 +21,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CONNESSIONI (Prese dai Secrets di Streamlit) ---
+# --- 2. CONNESSIONI (Dai Secrets) ---
 URL = st.secrets["SUPABASE_URL"]
 KEY = st.secrets["SUPABASE_KEY"]
 GROQ_AD = st.secrets["GROQ_API_KEY"]
@@ -91,18 +91,17 @@ else:
 t1, t2, t3, t4, t5 = st.tabs(["🔥 CUCINA", "📦 DISPENSA", "🛒 SPESA", "📖 ARCHIVIO", "💬 FEEDBACK"])
 
 with t1:
-   with t1:
     st.title("👨‍🍳 Svuotafrigo AI")
     lock_guest = not st.session_state.user_id and st.session_state.count_ospite >= 2
     if lock_guest: st.warning("Limite ospiti raggiunto. Accedi per continuare!")
     
-    ing = st.text_area("Cosa hai in frigo?")
+    ing = st.text_area("Cosa hai in frigo?", placeholder="Es: uova, farina, cioccolato...")
     
-    if st.button("GENERA ✨", use_container_width=True, disabled=lock_guest):
+    if st.button("GENERA ✨", use_container_width=True, disabled=lock_guest, key="main_gen"):
         if not ing:
-            st.warning("Scrivi almeno un ingrediente!")
+            st.warning("Inserisci degli ingredienti!")
         else:
-            with st.spinner("Lo Chef sta scrivendo..."):
+            with st.spinner("Lo Chef sta creando..."):
                 prompt = f"""Crea una ricetta con {ing}. 
                 Rispondi SEMPRE in questo formato preciso:
                 [LISTA] ingrediente1, ingrediente2 [/LISTA]
@@ -115,16 +114,10 @@ with t1:
                     r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}])
                     raw = r.choices[0].message.content
                     
-                    # --- CONTROLLO DI SICUREZZA (ANTI-CRASH) ---
                     if "[LISTA]" in raw and "[HTML]" in raw:
-                        try:
-                            st.session_state.ingredienti_estratti = raw.split("[LISTA]")[1].split("[/LISTA]")[0].strip().split(",")
-                            st.session_state.ultima_ricetta = raw.split("[HTML]")[1].split("[/HTML]")[0].strip()
-                        except:
-                            st.session_state.ultima_ricetta = raw
-                            st.session_state.ingredienti_estratti = []
+                        st.session_state.ingredienti_estratti = raw.split("[LISTA]")[1].split("[/LISTA]")[0].strip().split(",")
+                        st.session_state.ultima_ricetta = raw.split("[HTML]")[1].split("[/HTML]")[0].strip()
                     else:
-                        # Se l'IA non rispetta il formato, salviamo il testo grezzo
                         st.session_state.ultima_ricetta = raw
                         st.session_state.ingredienti_estratti = []
                     
@@ -134,12 +127,12 @@ with t1:
                     st.error(f"Errore tecnico: {e}")
 
     if st.session_state.ultima_ricetta:
-        # Visualizzazione: se è HTML lo renderizziamo, altrimenti mostriamo testo
-        mostra_ricetta = st.session_state.ultima_ricetta.replace("[HTML]", "").replace("[/HTML]", "")
-        st.markdown(f'<div class="recipe-card">{mostra_ricetta}</div>', unsafe_allow_html=True)
+        # Pulizia visiva (rimuove i tag tecnici se rimasti nel testo)
+        clean_view = st.session_state.ultima_ricetta.replace("[HTML]", "").replace("[/HTML]", "").strip()
+        st.markdown(f'<div class="recipe-card">{clean_view}</div>', unsafe_allow_html=True)
         
-        # Se abbiamo estratto gli ingredienti, mostriamo i tasti per la spesa
-        if st.session_state.user_id and st.session_state.ingredienti_estratti:
+        if st.session_state.user_id:
+            # --- Sezione Spesa ---
             st.subheader("🛒 Ti manca qualcosa?")
             disp = supabase.table("dispensa").select("ingrediente").eq("user_id", st.session_state.user_id).execute()
             lista_dispensa = [i['ingrediente'].lower() for i in disp.data]
@@ -148,62 +141,31 @@ with t1:
             for idx, item in enumerate(st.session_state.ingredienti_estratti):
                 clean_item = item.strip().lower()
                 if clean_item and clean_item not in lista_dispensa:
-                    if cols[idx % 3].button(f"+ {clean_item}", key=f"add_{idx}"):
+                    if cols[idx % 3].button(f"+ {clean_item}", key=f"add_ing_{idx}"):
                         supabase.table("spesa").insert({"user_id": st.session_state.user_id, "prodotto": clean_item}).execute()
-                        st.toast(f"{clean_item} aggiunto alla spesa!")
+                        st.toast(f"{clean_item} aggiunto!")
 
-        # Tasto Condivisione per Premium
-        if st.session_state.is_premium != "Free":
-            st.markdown("---")
-            msg_whatsapp = urllib.parse.quote(f"Guarda questa ricetta!\n\n{mostra_ricetta}")
-            st.link_button("🟢 Condividi su WhatsApp", f"https://wa.me/?text={msg_whatsapp}")
-
-        # Tasto Salvataggio
-        if st.session_state.user_id:
+            # --- Salvataggio ---
             res_count = supabase.table("ricette").select("id").eq("user_id", st.session_state.user_id).execute()
             if st.session_state.is_premium == "Free" and len(res_count.data) >= 5:
                 st.warning("⚠️ Limite di 5 ricette raggiunto.")
             else:
-# Aggiungiamo un key unico per distinguere questo bottone dagli altri
-             if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True, key="save_recipe_main"):                    supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
-             st.success("Salvata!")
-            st.rerun()
-        # --- FUNZIONE CONDIVISIONE (PREMIUM) ---
-        if st.session_state.is_premium != "Free":
-            st.markdown("### 📲 Condividi la ricetta")
-            # Pulizia HTML per rendere il testo leggibile su WhatsApp
-            testo_wa = mostra_ricetta.replace("<li>", "- ").replace("</li>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<h2>", "*").replace("</h2>", "*\n").replace("<h4>", "*").replace("</h4>", "*\n").replace("<ol>", "").replace("</ol>", "").replace("<hr>", "---")
-            msg_whatsapp = urllib.parse.quote(f"Guarda questa ricetta di Svuotafrigo AI!\n\n{testo_wa}")
-            st.link_button("🟢 Invia su WhatsApp", f"https://wa.me/?text={msg_whatsapp}")
-
-        if st.session_state.user_id:
-            st.subheader("🛒 Ti manca qualcosa?")
-            disp = supabase.table("dispensa").select("ingrediente").eq("user_id", st.session_state.user_id).execute()
-            lista_dispensa = [i['ingrediente'].lower() for i in disp.data]
-            
-            cols = st.columns(3)
-            for idx, item in enumerate(st.session_state.ingredienti_estratti):
-                clean_item = item.strip().lower()
-                if clean_item not in lista_dispensa and clean_item != "":
-                    if cols[idx % 3].button(f"+ {clean_item}", key=f"add_{idx}"):
-                        supabase.table("spesa").insert({"user_id": st.session_state.user_id, "prodotto": clean_item}).execute()
-                        st.toast(f"{clean_item} aggiunto alla spesa!")
-
-            res_count = supabase.table("ricette").select("id").eq("user_id", st.session_state.user_id).execute()
-            num_salvate = len(res_count.data)
-            
-            if st.session_state.is_premium == "Free" and num_salvate >= 5:
-                st.warning(f"⚠️ Hai raggiunto il limite di 5 ricette salvate.")
-            else:
-                if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True):
+                if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True, key="save_final"):
                     supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
                     st.success("Salvata!")
                     st.rerun()
 
+        # --- Condivisione (Solo Premium) ---
+        if st.session_state.is_premium != "Free":
+            st.markdown("---")
+            text_plain = clean_view.replace("<li>", "- ").replace("</li>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<h2>", "*").replace("</h2>", "*\n").replace("<h4>", "*").replace("</h4>", "*\n")
+            msg_whatsapp = urllib.parse.quote(f"Guarda questa ricetta!\n\n{text_plain}")
+            st.link_button("🟢 Invia su WhatsApp", f"https://wa.me/?text={msg_whatsapp}")
+
 with t2:
     st.header("📦 La tua Dispensa")
     if st.session_state.user_id:
-        with st.form("disp"):
+        with st.form("disp_form"):
             item = st.text_input("Aggiungi ingrediente")
             if st.form_submit_button("Inserisci"):
                 supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": item}).execute()
@@ -216,12 +178,12 @@ with t2:
                 supabase.table("dispensa").delete().eq("id", i['id']).execute()
                 st.rerun()
     else:
-        st.info("👋 Hey Chef! Per gestire la tua dispensa personale devi prima loggarti.")
+        st.info("Loggati per gestire la dispensa.")
 
 with t3:
     st.header("🛒 Lista della Spesa")
     if st.session_state.user_id:
-        if st.button("🗑️ SVUOTA TUTTA LA LISTA"):
+        if st.button("🗑️ SVUOTA TUTTA LA LISTA", key="clear_all_spesa"):
             supabase.table("spesa").delete().eq("user_id", st.session_state.user_id).execute()
             st.rerun()
         lista = supabase.table("spesa").select("*").eq("user_id", st.session_state.user_id).execute()
@@ -232,7 +194,7 @@ with t3:
                 supabase.table("spesa").delete().eq("id", s['id']).execute()
                 st.rerun()
     else:
-        st.info("🛒 La lista della spesa intelligente è disponibile solo per gli utenti registrati.")
+        st.info("Loggati per la spesa.")
 
 with t4:
     st.header("📖 Archivio")
@@ -240,23 +202,21 @@ with t4:
         res = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute()
         for r in res.data:
             with st.expander(f"Ricetta del {r['created_at'][:10]}"):
-                archivio_puro = r['contenuto'].replace("[HTML]", "").replace("[/HTML]", "")
+                archivio_puro = r['contenuto'].replace("[HTML]", "").replace("[/HTML]", "").replace("[LISTA]", "").split("[/LISTA]")[-1]
                 st.markdown(archivio_puro, unsafe_allow_html=True)
                 if st.button("Elimina", key=f"del_ric_{r['id']}"):
                     supabase.table("ricette").delete().eq("id", r['id']).execute()
                     st.rerun()
     else:
-        st.warning("📖 Vuoi salvare le tue creazioni? Accedi per sbloccare l'archivio.")
+        st.warning("Accedi per vedere l'archivio.")
 
 with t5:
     st.header("💬 Feedback")
     if st.session_state.user_id:
         v = st.slider("Voto", 1, 5, 5)
-        c = st.text_area("Cosa ne pensi?")
-        if st.button("Invia Feedback"):
-            try:
-                supabase.table("feedback").insert({"user_id": st.session_state.user_id, "voto": v, "messaggio": c}).execute()
-                st.success("Daje! Inviato.")
-            except Exception as e: st.error(f"Errore: {e}")
+        c = st.text_area("Messaggio")
+        if st.button("Invia", key="send_feedback"):
+            supabase.table("feedback").insert({"user_id": st.session_state.user_id, "voto": v, "messaggio": c}).execute()
+            st.success("Grazie!")
     else:
-        st.info("💬 La tua opinione conta! Accedi per lasciarci un feedback.")
+        st.info("Loggati per lasciare un feedback.")
