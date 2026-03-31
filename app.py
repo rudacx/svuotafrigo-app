@@ -74,7 +74,7 @@ else:
     if st.session_state.is_premium == "Free":
         st.sidebar.markdown("---")
         st.sidebar.markdown('<div class="pro-box"><div class="pro-title">🥇 GOLD</div><div class="pro-price">9.99€</div></div>', unsafe_allow_html=True)
-        if st.sidebar.button("SBLOCCA LIMITE"):
+        if st.sidebar.button("SBLOCCA GOLD"):
             sess = stripe.checkout.Session.create(payment_method_types=['card'], line_items=[{'price': ID_GOLD, 'quantity': 1}], mode='subscription', success_url="https://svuotafrigo-app.streamlit.app/", cancel_url="https://svuotafrigo-app.streamlit.app/", customer_email=st.session_state.user_email)
             st.sidebar.link_button("💳 PAGA ORA", sess.url)
         
