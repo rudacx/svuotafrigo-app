@@ -164,10 +164,10 @@ with t1:
             if st.session_state.is_premium == "Free" and len(res_count.data) >= 5:
                 st.warning("⚠️ Limite di 5 ricette raggiunto.")
             else:
-                if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True):
-                    supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
-                    st.success("Salvata!")
-                    st.rerun()
+# Aggiungiamo un key unico per distinguere questo bottone dagli altri
+             if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True, key="save_recipe_main"):                    supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
+             st.success("Salvata!")
+            st.rerun()
         # --- FUNZIONE CONDIVISIONE (PREMIUM) ---
         if st.session_state.is_premium != "Free":
             st.markdown("### 📲 Condividi la ricetta")
