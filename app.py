@@ -91,6 +91,7 @@ else:
 t1, t2, t3, t4, t5 = st.tabs(["🔥 CUCINA", "📦 DISPENSA", "🛒 SPESA", "📖 ARCHIVIO", "💬 FEEDBACK"])
 
 with t1:
+   with t1:
     st.title("👨‍🍳 Svuotafrigo AI")
     lock_guest = not st.session_state.user_id and st.session_state.count_ospite >= 2
     if lock_guest: st.warning("Limite ospiti raggiunto. Accedi per continuare!")
@@ -98,30 +99,75 @@ with t1:
     ing = st.text_area("Cosa hai in frigo?")
     
     if st.button("GENERA ✨", use_container_width=True, disabled=lock_guest):
-        with st.spinner("Lo Chef sta scrivendo..."):
-            prompt = f"""Crea una ricetta con {ing}. 
-            Rispondi SEMPRE in questo formato preciso:
-            [LISTA] ingrediente1, ingrediente2 [/LISTA]
-            [HTML] 
-            <h2 style='color: #00FFAA;'>🍳 Titolo</h2>
-            <h4 style='color: #00FFAA;'>🛒 Ingredienti:</h4><ul><li>...</li></ul>
-            <h4 style='color: #00FFAA;'>👨‍🍳 Preparazione:</h4><ol><li>...</li></ol>
-            [/HTML]"""
-            try:
-                r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}])
-                raw = r.choices[0].message.content
-                
-                st.session_state.ingredienti_estratti = raw.split("[LISTA]")[1].split("[/LISTA]")[0].strip().split(",")
-                st.session_state.ultima_ricetta = raw.split("[HTML]")[1].split("[/HTML]")[0].strip()
-                
-                if not st.session_state.user_id: st.session_state.count_ospite += 1
-                st.rerun()
-            except Exception as e:
-                st.error(f"Errore tecnico: {e}")
+        if not ing:
+            st.warning("Scrivi almeno un ingrediente!")
+        else:
+            with st.spinner("Lo Chef sta scrivendo..."):
+                prompt = f"""Crea una ricetta con {ing}. 
+                Rispondi SEMPRE in questo formato preciso:
+                [LISTA] ingrediente1, ingrediente2 [/LISTA]
+                [HTML] 
+                <h2 style='color: #00FFAA;'>🍳 Titolo</h2>
+                <h4 style='color: #00FFAA;'>🛒 Ingredienti:</h4><ul><li>...</li></ul>
+                <h4 style='color: #00FFAA;'>👨‍🍳 Preparazione:</h4><ol><li>...</li></ol>
+                [/HTML]"""
+                try:
+                    r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}])
+                    raw = r.choices[0].message.content
+                    
+                    # --- CONTROLLO DI SICUREZZA (ANTI-CRASH) ---
+                    if "[LISTA]" in raw and "[HTML]" in raw:
+                        try:
+                            st.session_state.ingredienti_estratti = raw.split("[LISTA]")[1].split("[/LISTA]")[0].strip().split(",")
+                            st.session_state.ultima_ricetta = raw.split("[HTML]")[1].split("[/HTML]")[0].strip()
+                        except:
+                            st.session_state.ultima_ricetta = raw
+                            st.session_state.ingredienti_estratti = []
+                    else:
+                        # Se l'IA non rispetta il formato, salviamo il testo grezzo
+                        st.session_state.ultima_ricetta = raw
+                        st.session_state.ingredienti_estratti = []
+                    
+                    if not st.session_state.user_id: st.session_state.count_ospite += 1
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Errore tecnico: {e}")
+
     if st.session_state.ultima_ricetta:
+        # Visualizzazione: se è HTML lo renderizziamo, altrimenti mostriamo testo
         mostra_ricetta = st.session_state.ultima_ricetta.replace("[HTML]", "").replace("[/HTML]", "")
         st.markdown(f'<div class="recipe-card">{mostra_ricetta}</div>', unsafe_allow_html=True)
         
+        # Se abbiamo estratto gli ingredienti, mostriamo i tasti per la spesa
+        if st.session_state.user_id and st.session_state.ingredienti_estratti:
+            st.subheader("🛒 Ti manca qualcosa?")
+            disp = supabase.table("dispensa").select("ingrediente").eq("user_id", st.session_state.user_id).execute()
+            lista_dispensa = [i['ingrediente'].lower() for i in disp.data]
+            
+            cols = st.columns(3)
+            for idx, item in enumerate(st.session_state.ingredienti_estratti):
+                clean_item = item.strip().lower()
+                if clean_item and clean_item not in lista_dispensa:
+                    if cols[idx % 3].button(f"+ {clean_item}", key=f"add_{idx}"):
+                        supabase.table("spesa").insert({"user_id": st.session_state.user_id, "prodotto": clean_item}).execute()
+                        st.toast(f"{clean_item} aggiunto alla spesa!")
+
+        # Tasto Condivisione per Premium
+        if st.session_state.is_premium != "Free":
+            st.markdown("---")
+            msg_whatsapp = urllib.parse.quote(f"Guarda questa ricetta!\n\n{mostra_ricetta}")
+            st.link_button("🟢 Condividi su WhatsApp", f"https://wa.me/?text={msg_whatsapp}")
+
+        # Tasto Salvataggio
+        if st.session_state.user_id:
+            res_count = supabase.table("ricette").select("id").eq("user_id", st.session_state.user_id).execute()
+            if st.session_state.is_premium == "Free" and len(res_count.data) >= 5:
+                st.warning("⚠️ Limite di 5 ricette raggiunto.")
+            else:
+                if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True):
+                    supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
+                    st.success("Salvata!")
+                    st.rerun()
         # --- FUNZIONE CONDIVISIONE (PREMIUM) ---
         if st.session_state.is_premium != "Free":
             st.markdown("### 📲 Condividi la ricetta")
