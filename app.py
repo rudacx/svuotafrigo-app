@@ -14,6 +14,32 @@ st.markdown("""
     .stApp { background-color: #0E1117; color: #FFFFFF; }
     .recipe-card { background: #1E232D; padding: 30px; border-radius: 20px; border: 1px solid #30363D; margin-top: 20px; }
     h1, h2, h3 { color: #00FFAA !important; }
+    
+    /* Pulsante Login Appariscente nel rettangolo arancione */
+    .login-float {
+        position: fixed;
+        top: 15px;
+        left: 60px;
+        z-index: 9999;
+        background: linear-gradient(90deg, #00FFAA, #00CC88);
+        color: #0E1117 !important;
+        padding: 6px 15px;
+        border-radius: 50px;
+        font-weight: 800;
+        font-size: 0.8rem;
+        text-decoration: none;
+        box-shadow: 0 4px 15px rgba(0, 255, 170, 0.3);
+        transition: 0.3s;
+        animation: pulse 2s infinite;
+        display: inline-block;
+    }
+    
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(0, 255, 170, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(0, 255, 170, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(0, 255, 170, 0); }
+    }
+
     .pro-box { background: linear-gradient(145deg, #252b36, #1a1f26); padding: 20px; border-radius: 15px; border: 1px solid #3d444d; margin-bottom: 15px; text-align: center; }
     .pro-title { color: #00FFAA; font-weight: 700; font-size: 1.1rem; }
     .pro-price { color: #ffffff; font-size: 1.5rem; font-weight: 800; }
@@ -21,7 +47,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CONNESSIONI ---
+# --- 2. CONNESSIONI (Secrets) ---
 URL = st.secrets["SUPABASE_URL"]
 KEY = st.secrets["SUPABASE_KEY"]
 GROQ_AD = st.secrets["GROQ_API_KEY"]
@@ -42,7 +68,11 @@ if "ultima_ricetta" not in st.session_state: st.session_state.ultima_ricetta = N
 if "ingredienti_estratti" not in st.session_state: st.session_state.ingredienti_estratti = []
 if "count_ospite" not in st.session_state: st.session_state.count_ospite = 0
 
-# --- 4. SIDEBAR ---
+# --- 4. LOGICA PULSANTE LOGIN (RETTANGOLO ARANCIONE) ---
+if st.session_state.user_id is None:
+    st.markdown('<a href="#menu" class="login-float">👋 LOGIN QUI</a>', unsafe_allow_html=True)
+
+# --- 5. SIDEBAR ---
 st.sidebar.title("👤 My Kitchen")
 
 if st.session_state.user_id is None:
@@ -74,20 +104,15 @@ else:
     if st.session_state.is_premium == "Free":
         st.sidebar.markdown("---")
         st.sidebar.markdown('<div class="pro-box"><div class="pro-title">🥇 GOLD</div><div class="pro-price">9.99€</div></div>', unsafe_allow_html=True)
-        if st.sidebar.button("SBLOCCA GOLD"):
+        if st.sidebar.button("SBLOCCA LIMITE"):
             sess = stripe.checkout.Session.create(payment_method_types=['card'], line_items=[{'price': ID_GOLD, 'quantity': 1}], mode='subscription', success_url="https://svuotafrigo-app.streamlit.app/", cancel_url="https://svuotafrigo-app.streamlit.app/", customer_email=st.session_state.user_email)
             st.sidebar.link_button("💳 PAGA ORA", sess.url)
-        
-        st.sidebar.markdown('<div class="pro-box"><div class="pro-title">💎 DIAMOND</div><div class="pro-price">14.99€</div></div>', unsafe_allow_html=True)
-        if st.sidebar.button("SBLOCCA DIAMOND"):
-            sess = stripe.checkout.Session.create(payment_method_types=['card'], line_items=[{'price': ID_DIAMOND, 'quantity': 1}], mode='subscription', success_url="https://svuotafrigo-app.streamlit.app/", cancel_url="https://svuotafrigo-app.streamlit.app/", customer_email=st.session_state.user_email)
-            st.sidebar.link_button("💎 DIVENTA DIAMANTE", sess.url)
 
     if st.sidebar.button("Logout 🚪", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
-# --- 5. TABS ---
+# --- 6. TABS ---
 t1, t2, t3, t4, t5 = st.tabs(["🔥 CUCINA", "📦 DISPENSA", "🛒 SPESA", "📖 ARCHIVIO", "💬 FEEDBACK"])
 
 with t1:
@@ -95,15 +120,15 @@ with t1:
     lock_guest = not st.session_state.user_id and st.session_state.count_ospite >= 2
     if lock_guest: st.warning("Limite ospiti raggiunto. Accedi per continuare!")
     
-    ing = st.text_area("Cosa hai in frigo?", placeholder="Es: uova, farina, latte...")
+    ing = st.text_area("Cosa hai in frigo?", placeholder="Es: farina di mais, uova...")
     
-    if st.button("GENERA ✨", use_container_width=True, disabled=lock_guest, key="btn_main_gen"):
+    if st.button("GENERA ✨", use_container_width=True, disabled=lock_guest, key="main_gen_btn"):
         if not ing:
-            st.warning("Scrivi qualcosa!")
+            st.warning("Inserisci degli ingredienti!")
         else:
-            with st.spinner("Lo Chef sta cucinando l'idea..."):
+            with st.spinner("Lo Chef sta scrivendo..."):
                 prompt = f"""Crea una ricetta con {ing}. 
-                Rispondi SEMPRE in questo formato preciso:
+                Rispondi SEMPRE in questo formato:
                 [LISTA] ingrediente1, ingrediente2 [/LISTA]
                 [HTML] 
                 <h2 style='color: #00FFAA;'>🍳 Titolo</h2>
@@ -114,89 +139,57 @@ with t1:
                     r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}])
                     raw = r.choices[0].message.content
                     
-                    # Estrazione ingredienti per i bottoni
-                    if "[LISTA]" in raw and "[/LISTA]" in raw:
+                    if "[LISTA]" in raw and "[HTML]" in raw:
                         st.session_state.ingredienti_estratti = raw.split("[LISTA]")[1].split("[/LISTA]")[0].strip().split(",")
-                    
-                    # Estrazione HTML della ricetta
-                    if "[HTML]" in raw and "[/HTML]" in raw:
                         st.session_state.ultima_ricetta = raw.split("[HTML]")[1].split("[/HTML]")[0].strip()
                     else:
                         st.session_state.ultima_ricetta = raw
                     
                     if not st.session_state.user_id: st.session_state.count_ospite += 1
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Errore: {e}")
+                except Exception as e: st.error(f"Errore: {e}")
 
     if st.session_state.ultima_ricetta:
-        # --- PULIZIA FINALE AGGRESSIVA ---
-        # Rimuoviamo manualmente ogni tag che potrebbe essere "sfuggito" alla cattura dell'IA
-        pulizia = st.session_state.ultima_ricetta
-        tags_da_levare = ["[LISTA]", "[/LISTA]", "[HTML]", "[/HTML]"]
-        
-        # Se l'IA ha scritto la lista degli ingredienti nel corpo del testo, la tagliamo via
-        if "[/LISTA]" in pulizia:
-            pulizia = pulizia.split("[/LISTA]")[-1].strip()
-            
-        for tag in tags_da_levare:
-            pulizia = pulizia.replace(tag, "")
-            
-        st.markdown(f'<div class="recipe-card">{pulizia.strip()}</div>', unsafe_allow_html=True)
+        # Pulizia display
+        disp_text = st.session_state.ultima_ricetta.replace("[HTML]", "").replace("[/HTML]", "").replace("[LISTA]", "").split("[/LISTA]")[-1].strip()
+        st.markdown(f'<div class="recipe-card">{disp_text}</div>', unsafe_allow_html=True)
         
         if st.session_state.user_id:
-            # Bottoni Spesa
             st.subheader("🛒 Ti manca qualcosa?")
-            disp = supabase.table("dispensa").select("ingrediente").eq("user_id", st.session_state.user_id).execute()
-            lista_dispensa = [i['ingrediente'].lower() for i in disp.data]
-            
             cols = st.columns(3)
             for idx, item in enumerate(st.session_state.ingredienti_estratti):
-                clean_item = item.strip().lower()
-                if clean_item and clean_item not in lista_dispensa:
-                    if cols[idx % 3].button(f"+ {clean_item}", key=f"btn_add_{idx}"):
-                        supabase.table("spesa").insert({"user_id": st.session_state.user_id, "prodotto": clean_item}).execute()
-                        st.toast(f"{clean_item} aggiunto!")
+                if item.strip():
+                    if cols[idx % 3].button(f"+ {item.strip()}", key=f"add_{idx}"):
+                        supabase.table("spesa").insert({"user_id": st.session_state.user_id, "prodotto": item.strip()}).execute()
+                        st.toast(f"{item.strip()} aggiunto!")
 
-            # Salvataggio
-            res_count = supabase.table("ricette").select("id").eq("user_id", st.session_state.user_id).execute()
-            if st.session_state.is_premium == "Free" and len(res_count.data) >= 5:
-                st.warning("⚠️ Limite raggiunto.")
-            else:
-                if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True, key="save_recipe_final"):
-                    supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
-                    st.success("Salvata!")
-                    st.rerun()
+            if st.button("💾 SALVA IN ARCHIVIO", use_container_width=True, key="save_main"):
+                supabase.table("ricette").insert({"user_id": st.session_state.user_id, "contenuto": st.session_state.ultima_ricetta}).execute()
+                st.success("Salvata!")
 
-        # Condivisione Premium
-        if st.session_state.is_premium != "Free":
-            st.markdown("---")
-            msg_whatsapp = urllib.parse.quote(f"Guarda questa ricetta creata con Svuotafrigo AI!\n\n{pulizia}")
-            st.link_button("🟢 Condividi su WhatsApp", f"https://wa.me/?text={msg_whatsapp}")
-
-# --- RESTANTI TAB (T2, T3, T4, T5) ---
+# --- TAB DISPENSA ---
 with t2:
     st.header("📦 La tua Dispensa")
     if st.session_state.user_id:
-        with st.form("dispensa_form"):
-            item = st.text_input("Aggiungi ingrediente")
-            if st.form_submit_button("Inserisci"):
-                supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": item}).execute()
+        with st.form("disp_f"):
+            i = st.text_input("Ingrediente")
+            if st.form_submit_button("Aggiungi"):
+                supabase.table("dispensa").insert({"user_id": st.session_state.user_id, "ingrediente": i}).execute()
                 st.rerun()
         res = supabase.table("dispensa").select("*").eq("user_id", st.session_state.user_id).execute()
-        for i in res.data:
+        for d in res.data:
             c1, c2 = st.columns([0.8, 0.2])
-            c1.write(f"✅ {i['ingrediente']}")
-            if c2.button("🗑️", key=f"del_d_{i['id']}"):
-                supabase.table("dispensa").delete().eq("id", i['id']).execute()
+            c1.write(f"✅ {d['ingrediente']}")
+            if c2.button("🗑️", key=f"del_d_{d['id']}"):
+                supabase.table("dispensa").delete().eq("id", d['id']).execute()
                 st.rerun()
-    else:
-        st.info("Loggati per usare la dispensa.")
+    else: st.info("Accedi per usare la dispensa.")
 
+# --- TAB SPESA ---
 with t3:
     st.header("🛒 Lista della Spesa")
     if st.session_state.user_id:
-        if st.button("🗑️ SVUOTA LISTA", key="clear_spesa"):
+        if st.button("🗑️ SVUOTA TUTTO", key="clear_all"):
             supabase.table("spesa").delete().eq("user_id", st.session_state.user_id).execute()
             st.rerun()
         lista = supabase.table("spesa").select("*").eq("user_id", st.session_state.user_id).execute()
@@ -206,31 +199,28 @@ with t3:
             if col2.button("❌", key=f"del_s_{s['id']}"):
                 supabase.table("spesa").delete().eq("id", s['id']).execute()
                 st.rerun()
-    else:
-        st.info("Loggati per la spesa.")
+    else: st.info("Accedi per la lista spesa.")
 
+# --- TAB ARCHIVIO ---
 with t4:
     st.header("📖 Archivio")
     if st.session_state.user_id:
         res = supabase.table("ricette").select("*").eq("user_id", st.session_state.user_id).execute()
         for r in res.data:
             with st.expander(f"Ricetta del {r['created_at'][:10]}"):
-                # Anche qui puliamo i tag per l'archivio
-                testo_arch = r['contenuto'].replace("[HTML]", "").replace("[/HTML]", "").replace("[LISTA]", "").split("[/LISTA]")[-1]
-                st.markdown(testo_arch, unsafe_allow_html=True)
+                st.markdown(r['contenuto'].replace("[HTML]", "").replace("[/HTML]", ""), unsafe_allow_html=True)
                 if st.button("Elimina", key=f"del_r_{r['id']}"):
                     supabase.table("ricette").delete().eq("id", r['id']).execute()
                     st.rerun()
-    else:
-        st.warning("Accedi per l'archivio.")
+    else: st.warning("Accedi per l'archivio.")
 
+# --- TAB FEEDBACK ---
 with t5:
     st.header("💬 Feedback")
     if st.session_state.user_id:
         v = st.slider("Voto", 1, 5, 5)
-        c = st.text_area("Messaggio")
-        if st.button("Invia", key="send_f"):
-            supabase.table("feedback").insert({"user_id": st.session_state.user_id, "voto": v, "messaggio": c}).execute()
-            st.success("Inviato!")
-    else:
-        st.info("Loggati per il feedback.")
+        m = st.text_area("Messaggio")
+        if st.button("Invia", key="feed_btn"):
+            supabase.table("feedback").insert({"user_id": st.session_state.user_id, "voto": v, "messaggio": m}).execute()
+            st.success("Grazie!")
+    else: st.info("Accedi per i feedback.")
